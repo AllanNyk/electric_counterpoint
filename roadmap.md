@@ -33,18 +33,24 @@ against the score length.
 
 ---
 
-## Phase 3 — Sample pipeline
+## Phase 3 — Sample pipeline ◐ (in progress)
 
-Source CC0 sample banks (VCSL):
-- `guitar_clean` — clean electric (default for live + guitars 1-7)
-- `guitar_nylon` — classical/nylon (palette swap)
-- `guitar_acoustic` — steel-string (palette swap)
-- `bass_guitar` — electric bass (Bg1, Bg2)
-- `woodblock` — single-pitch click (P11)
+Three core CC0 banks built by `tools/build_samples.sh`:
 
-Build `tools/build_samples.sh`: ffmpeg → chromatic mp3 banks under
-`assets/audio/<instrument>/<note>.mp3`. Sharps written as `s` (cs4 = C#4)
-for URL safety, mirroring `in_c`. Verify ranges cover what the score asks.
+- `guitar_clean` — Karoryfer black-and-green-guitars, chromatic A3..C7
+  (default for live + guitars 1-7)
+- `bass_guitar` — Karoryfer black-and-blue-basses, chromatic B1..E5
+  (Bg1, Bg2)
+- `woodblock` — VCSL single click (P11)
+
+Script flow: curl WAVs from GitHub raw URLs into `tools/.cache/`, then
+ffmpeg pitch-shifts to chromatic mp3 banks under
+`assets/audio/<instrument>/<note>.mp3`. Sharps written as `s` (`cs4 = C#4`)
+for URL safety, mirroring `in_c`.
+
+Phase 7 will add `guitar_nylon` and `guitar_acoustic` for the swap palette
+(VCSL has no guitars; Karoryfer has no nylon — likely picks: Iowa MIS for
+nylon, `karoryfer.shinyguitar` for acoustic-ish archtop).
 
 ---
 

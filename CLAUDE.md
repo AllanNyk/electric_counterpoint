@@ -16,8 +16,24 @@ stack and several patterns, but with significant differences (see below).
 - Canvas 2D for the stage view. HTML overlay for the movement-select screen,
   top bar, modals, and touch panel.
 - Pointer Events for unified mouse / touch handling.
-- Sample library: Versilian Community Sample Library (VCSL, CC0). Source
-  WAVs are pre-rendered to chromatic MP3 banks under `assets/audio/`.
+- Sample sources (all CC0):
+  - **Clean electric guitar** — Karoryfer "Black-and-Green Guitars"
+    (`sfzinstruments/karoryfer.black-and-green-guitars` on GitHub),
+    chromatic A3..C7, `Samples/black/ord/`
+  - **Bass guitar** — Karoryfer "Black-and-Blue Basses"
+    (`sfzinstruments/karoryfer.black-and-blue-basses`), chromatic B1..E5,
+    `Samples/darkblack/reg/`
+  - **Wood block** — VCSL (`sgossner/VCSL`), single `wood_click_mp.wav`
+    under `Idiophones/Struck Idiophones/Woodblock/`
+  - Nylon / acoustic for the swap palette: deferred to phase 7. VCSL has
+    no guitars; Karoryfer has no nylon. Likely picks: `karoryfer.shinyguitar`
+    (CC0 archtop) for "acoustic-ish", and Iowa MIS Classical Guitar
+    (manually downloaded, public domain) for nylon.
+- `tools/build_samples.sh` curls the specific source WAVs from GitHub raw
+  URLs into a local cache (`tools/.cache/`, gitignored), then ffmpeg
+  pitch-shifts them to chromatic MP3 banks under
+  `assets/audio/<instrument>/<note>.mp3`. Sharps written as 's'
+  (`cs4 = C#4`) for URL safety, mirroring `in_c`.
 - Reverb IR: Theatre@41 from openairlib.net (CC-BY, University of York) —
   same IR file as `in_c`.
 
@@ -77,7 +93,8 @@ src/
   roster.js              — guitar swap palette (clean / nylon / acoustic)  (TBD)
 assets/audio/<instrument>/  — pre-rendered MP3 banks (one folder per inst)  (TBD)
 assets/audio/ir/         — convolution reverb IR (theatre41.wav)            (TBD)
-tools/build_samples.sh   — ffmpeg pipeline → chromatic MP3 banks            (TBD)
+tools/build_samples.sh   — curl + ffmpeg → chromatic MP3 banks (Karoryfer
+                           + VCSL sources, cached under tools/.cache/)
 III_fast.xml             — MusicXML transcription (NOT in public repo —
                            Reich's score is copyrighted)
 roadmap.md               — phased build plan + status

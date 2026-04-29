@@ -37,29 +37,58 @@ async function chooseMovement(id) {
   }
 }
 
-// Phase-2 smoke test: prove the parser produces sane per-part timelines.
-// Replaces the placeholder with a per-part summary; deeper validation
-// happens later when the audio engine actually plays the notes.
+// Phase-2/3 smoke test: prove the parser produces sane per-part timelines
+// AND surface per-role MIDI ranges so we know what to size the sample
+// banks for. Replaces the placeholder with a monospaced summary.
 function renderScoreSmokeTest(movement, score) {
   const totalNotes = score.parts.reduce((sum, p) => sum + p.notes.length, 0);
   const durMin = Math.floor(score.duration / 60);
   const durSec = Math.round(score.duration % 60).toString().padStart(2, '0');
 
+  // Per-role MIDI extents — decides each sample bank's chromatic range.
+  const roleRanges = new Map();
+  for (const p of score.parts) {
+    if (p.notes.length === 0) continue;
+    const midis = p.notes.map(n => n.midi);
+    const lo = Math.min(...midis);
+    const hi = Math.max(...midis);
+    const cur = roleRanges.get(p.role);
+    if (cur) {
+      cur.lo = Math.min(cur.lo, lo);
+      cur.hi = Math.max(cur.hi, hi);
+    } else {
+      roleRanges.set(p.role, { lo, hi });
+    }
+  }
+
   const lines = [
     `${movement.label} — parsed`,
     `${score.parts.length} parts, ${totalNotes} notes, ${durMin}:${durSec} @ ♩=${ENCODED_BPM_DISPLAY}`,
     '',
+    'per-part:',
     ...score.parts.map(p => {
-      const first = p.notes[0]?.time?.toFixed(2) ?? '–';
-      const last = p.notes[p.notes.length - 1]?.time?.toFixed(2) ?? '–';
-      return `  ${p.id.padEnd(3)} ${p.role.padEnd(7)} ${p.label.padEnd(10)} ${String(p.notes.length).padStart(5)} notes  [${first}s → ${last}s]`;
+      const midis = p.notes.map(n => n.midi);
+      const lo = midis.length ? Math.min(...midis) : '–';
+      const hi = midis.length ? Math.max(...midis) : '–';
+      return `  ${p.id.padEnd(3)} ${p.role.padEnd(7)} ${p.label.padEnd(10)} ${String(p.notes.length).padStart(5)} notes  MIDI ${String(lo).padStart(3)}–${String(hi).padStart(3)} (${midiName(lo)}–${midiName(hi)})`;
     }),
+    '',
+    'per-role (sample-bank ranges to source):',
+    ...[...roleRanges.entries()].map(([role, r]) =>
+      `  ${role.padEnd(7)} MIDI ${r.lo}–${r.hi} (${midiName(r.lo)}–${midiName(r.hi)})`
+    ),
   ];
   placeholderEl.style.fontFamily = 'ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace';
   placeholderEl.style.whiteSpace = 'pre';
   placeholderEl.style.textAlign = 'left';
   placeholderEl.style.fontSize = '12px';
   placeholderEl.textContent = lines.join('\n');
+}
+
+function midiName(midi) {
+  if (typeof midi !== 'number') return '–';
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return names[midi % 12] + (Math.floor(midi / 12) - 1);
 }
 
 // Cosmetic alias — keeps the smoke-test line readable without importing the

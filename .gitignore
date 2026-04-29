@@ -4,6 +4,9 @@
 # Sample banks are large and rebuildable from source.
 assets/audio/
 
+# Source-WAV cache for build_samples.sh (rebuildable on demand).
+tools/.cache/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

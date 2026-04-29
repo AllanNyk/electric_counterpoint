@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Electric Counterpoint</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #0e0e10;
+      --fg: #e8e8ea;
+      --dim: #8a8a90;
+      --accent: #d96b3a;
+      --accent-soft: #b25529;
+      --panel: #181820;
+      --panel-border: #2a2a35;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      touch-action: none;
+    }
+    body { user-select: none; -webkit-user-select: none; }
+
+    /* Movement select screen */
+    #movement-select {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 24px;
+      background: var(--bg);
+      z-index: 10;
+      transition: opacity 600ms ease;
+    }
+    #movement-select.fading { opacity: 0; pointer-events: none; }
+    #movement-select h1 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 48px);
+      font-weight: 300;
+      letter-spacing: 0.04em;
+      text-align: center;
+    }
+    #movement-select .subtitle {
+      margin: 0;
+      color: var(--dim);
+      font-size: clamp(14px, 2vw, 18px);
+      font-weight: 300;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+    #movement-select .composer {
+      color: var(--dim);
+      font-size: 14px;
+      letter-spacing: 0.05em;
+      margin-top: -16px;
+    }
+    #movement-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 12px;
+      min-width: min(360px, 92vw);
+    }
+    .movement-btn {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      color: var(--fg);
+      padding: 18px 24px;
+      font-size: 18px;
+      font-family: inherit;
+      letter-spacing: 0.04em;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 150ms, border-color 150ms;
+    }
+    .movement-btn:hover:not(:disabled) {
+      background: #20202a;
+      border-color: var(--accent);
+    }
+    .movement-btn:disabled {
+      color: #4a4a52;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .movement-btn .label-main {
+      display: block;
+      font-size: 20px;
+      font-weight: 400;
+    }
+    .movement-btn .label-sub {
+      display: block;
+      font-size: 12px;
+      color: var(--dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .movement-btn:disabled .label-sub::after {
+      content: " — coming soon";
+    }
+
+    /* Stage view (placeholder for phase 1) */
+    #stage-view {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    #stage-view.active { display: flex; }
+
+    #top-bar {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--panel-border);
+      background: var(--panel);
+      flex-wrap: wrap;
+    }
+    #top-bar .movement-title {
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      color: var(--fg);
+    }
+    #top-bar .spacer { flex: 1; }
+    #top-bar button {
+      background: transparent;
+      border: 1px solid var(--panel-border);
+      color: var(--fg);
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    #top-bar button:hover { border-color: var(--accent); }
+
+    #stage-canvas {
+      flex: 1;
+      width: 100%;
+      display: block;
+    }
+
+    /* Phase 1 placeholder text inside the stage view */
+    #stage-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      color: var(--dim);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+  <div id="movement-select">
+    <h1>Electric Counterpoint</h1>
+    <div class="composer">Steve Reich, 1987</div>
+    <p class="subtitle">choose a movement</p>
+    <div id="movement-buttons">
+      <button class="movement-btn" data-movement="I" disabled>
+        <span class="label-main">I. Fast</span>
+        <span class="label-sub"></span>
+      </button>
+      <button class="movement-btn" data-movement="II" disabled>
+        <span class="label-main">II. Slow</span>
+        <span class="label-sub"></span>
+      </button>
+      <button class="movement-btn" data-movement="III">
+        <span class="label-main">III. Fast</span>
+        <span class="label-sub">live guitar · 7 guitars · 2 bass · click</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="stage-view">
+    <div id="top-bar">
+      <span class="movement-title" id="movement-title-text">III. Fast</span>
+      <span class="spacer"></span>
+      <button id="back-btn">← Movements</button>
+    </div>
+    <canvas id="stage-canvas"></canvas>
+    <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

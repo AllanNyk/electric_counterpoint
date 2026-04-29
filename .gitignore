@@ -1,0 +1,12 @@
+# Reich's score is copyrighted; keep MusicXML out of the public repo.
+*.xml
+
+# Sample banks are large and rebuildable from source.
+assets/audio/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

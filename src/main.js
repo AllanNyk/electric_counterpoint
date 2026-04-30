@@ -18,6 +18,7 @@ import {
   defaultListenerPosition,
   voiceColor,
   voiceRadius,
+  clampToStage,
   VISUAL,
 } from './layout.js';
 
@@ -127,6 +128,111 @@ function applyStageLayout() {
     const pos = positions.get(voice.id);
     if (pos) voice.setPosition(pos.x, pos.y);
   }
+  recomputeSpatial();
+}
+
+// ---- spatial audio ----
+//
+// Per voice: pan from horizontal offset to listener (left/right), dry
+// gain attenuated by distance, reverb send increased by distance. All
+// three are smoothed via setTargetAtTime so dragging doesn't produce
+// zipper noise. Recomputed whenever the listener or any voice moves;
+// also called once after applyStageLayout so initial values are right.
+
+const SPATIAL_SMOOTH = 0.025;   // setTargetAtTime time constant (sec)
+const PAN_HALF_WIDTH_SCALE = 1.05;
+
+function recomputeSpatial() {
+  if (!listenerPos || !layout || !voices.length || !audio.ctx) return;
+  const t = audio.currentTime;
+  const halfW = layout.arcRadius * PAN_HALF_WIDTH_SCALE;
+  const maxDist = layout.arcRadius * 1.4;
+  for (const v of voices) {
+    const dx = v.x - listenerPos.x;
+    const dy = v.y - listenerPos.y;
+    const dist = Math.hypot(dx, dy);
+    const nDist = Math.min(1, dist / maxDist);
+    const pan = Math.max(-1, Math.min(1, dx / halfW));
+    const dry = lerp(1.0, 0.35, nDist);
+    const wet = lerp(0.15, 0.55, nDist);
+    v.channel.panner.pan.setTargetAtTime(pan, t, SPATIAL_SMOOTH);
+    v.channel.dryGain.gain.setTargetAtTime(dry, t, SPATIAL_SMOOTH);
+    v.channel.wetSend.gain.setTargetAtTime(wet, t, SPATIAL_SMOOTH);
+  }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// ---- pointer drag ----
+
+let dragTarget = null;       // 'listener' | Voice | null
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+function pointerCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function hitTest(x, y) {
+  if (!listenerPos) return null;
+  // Listener wins ties — it's the conductor's avatar.
+  const dxL = x - listenerPos.x;
+  const dyL = y - listenerPos.y;
+  const lr = VISUAL.listenerRadius + 8;
+  if (dxL * dxL + dyL * dyL <= lr * lr) return 'listener';
+  // Voices, in reverse order so visually-on-top ones are picked first.
+  for (let i = voices.length - 1; i >= 0; i--) {
+    const v = voices[i];
+    const r = voiceRadius(v.part) + 8;
+    const dx = x - v.x;
+    const dy = y - v.y;
+    if (dx * dx + dy * dy <= r * r) return v;
+  }
+  return null;
+}
+
+function onPointerDown(e) {
+  // iOS Safari sometimes leaves the audio context suspended after a
+  // gap — defensively resume on every pointerdown.
+  if (audio.ctx?.state === 'suspended') audio.ctx.resume();
+  if (!layout) return;
+  const { x, y } = pointerCoords(e);
+  const target = hitTest(x, y);
+  if (!target) return;
+  e.preventDefault();
+  if (canvas.setPointerCapture) {
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
+  }
+  dragTarget = target;
+  if (target === 'listener') {
+    dragOffsetX = listenerPos.x - x;
+    dragOffsetY = listenerPos.y - y;
+  } else {
+    dragOffsetX = target.x - x;
+    dragOffsetY = target.y - y;
+  }
+  canvas.style.cursor = 'grabbing';
+}
+
+function onPointerMove(e) {
+  if (!dragTarget || !layout) return;
+  const { x, y } = pointerCoords(e);
+  const clamped = clampToStage(x + dragOffsetX, y + dragOffsetY, layout);
+  if (dragTarget === 'listener') {
+    listenerPos = { x: clamped.x, y: clamped.y };
+  } else {
+    dragTarget.setPosition(clamped.x, clamped.y);
+  }
+  recomputeSpatial();
+}
+
+function onPointerUp(e) {
+  if (canvas.releasePointerCapture && e?.pointerId != null) {
+    try { canvas.releasePointerCapture(e.pointerId); } catch {}
+  }
+  dragTarget = null;
+  canvas.style.cursor = '';
 }
 
 // Phase-2/3 smoke test: per-part timelines + per-role MIDI ranges.
@@ -287,6 +393,19 @@ function onResize() {
 }
 window.addEventListener('resize', onResize);
 syncCanvasBitmap();
+
+canvas.addEventListener('pointerdown', onPointerDown);
+canvas.addEventListener('pointermove', onPointerMove);
+canvas.addEventListener('pointerup', onPointerUp);
+canvas.addEventListener('pointercancel', onPointerUp);
+
+// Hover cursor: shift to "grab" when over a draggable item.
+canvas.addEventListener('pointermove', (e) => {
+  if (dragTarget) return; // already grabbing
+  if (!layout) return;
+  const { x, y } = pointerCoords(e);
+  canvas.style.cursor = hitTest(x, y) ? 'grab' : '';
+});
 
 // ---- render loop ----
 

@@ -63,15 +63,38 @@ export function initialVoicePositions(parts, layout) {
     positions.set(p.id, { x: cx, y: listenerY - arcRadius * 0.45 });
   }
 
-  // Click: back of stage, just above the arc top.
+  // Click: back-left of stage, off-center so it doesn't overlap G5 (the
+  // arc's top-center voice). Suggests a percussionist position upstage.
   for (const p of clickParts) {
     positions.set(p.id, {
-      x: cx,
-      y: Math.max(STAGE_PADDING * 0.5, listenerY - arcRadius * 1.06),
+      x: cx - arcRadius * 0.40,
+      y: Math.max(STAGE_PADDING * 0.5, listenerY - arcRadius * 1.18),
     });
   }
 
   return positions;
+}
+
+// Clamp (x, y) into the half-moon stage area used for both voices and
+// the listener dot. Returns the constrained coordinates.
+export function clampToStage(x, y, layout) {
+  const { cx, listenerY, arcRadius } = layout;
+  // Maximum radius from the default listener position (the "stage edge").
+  const maxR = arcRadius * 1.18;
+  const dx = x - cx;
+  const dy = y - listenerY;
+  const dist = Math.hypot(dx, dy);
+  let nx = x, ny = y;
+  if (dist > maxR) {
+    const k = maxR / dist;
+    nx = cx + dx * k;
+    ny = listenerY + dy * k;
+  }
+  // Keep things from drifting below the listener line by more than a
+  // small slack — the half-moon opens upward.
+  const maxY = listenerY + 24;
+  if (ny > maxY) ny = maxY;
+  return { x: nx, y: ny };
 }
 
 // Listener default position — bottom-center of the stage. Phase 6 makes

@@ -1,10 +1,10 @@
 # Reich's score is copyrighted; keep MusicXML out of the public repo.
 *.xml
 
-# Sample banks are large and rebuildable from source.
-assets/audio/
-
-# Source-WAV cache for build_samples.sh (rebuildable on demand).
+# Source-WAV cache for build_samples.sh (large, rebuildable on demand).
+# The chromatic mp3 banks under assets/audio/ ARE tracked so the deploy
+# workflow can ship them — only the multi-megabyte source WAVs are
+# excluded.
 tools/.cache/
 
 # OS / editor cruft

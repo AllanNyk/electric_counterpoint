@@ -147,7 +147,9 @@
       cursor: pointer;
       border-radius: 3px;
     }
-    #top-bar button:hover { border-color: var(--accent); }
+    #top-bar button:hover:not(:disabled) { border-color: var(--accent); }
+    #top-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #top-bar button.playing { border-color: var(--accent); color: var(--accent); }
 
     #stage-canvas {
       flex: 1;
@@ -193,6 +195,7 @@
   <div id="stage-view">
     <div id="top-bar">
       <span class="movement-title" id="movement-title-text">III. Fast</span>
+      <button id="play-btn" disabled>▶ Play</button>
       <span class="spacer"></span>
       <button id="back-btn">← Movements</button>
     </div>

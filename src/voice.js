@@ -44,7 +44,22 @@ export class Voice {
     this.userVolume = ROLE_GAIN[this.role] ?? 1.0;
     this.scheduledIdx = 0;
 
+    // Stage position — set by main.js once layout is computed. Phase 5
+    // renders these statically; phase 6 makes them user-draggable.
+    this.x = 0;
+    this.y = 0;
+
+    // Onset history for the visual pulse. Each scheduled note pushes its
+    // audioTime; the renderer reads the most recent and fades brightness
+    // back to baseline over PULSE_DURATION seconds.
+    this.recentOnsets = [];
+
     this.channel = audio.createVoiceChannel({ initialGain: this.effectiveGain() });
+  }
+
+  setPosition(x, y) {
+    this.x = x;
+    this.y = y;
   }
 
   effectiveGain() {
@@ -112,6 +127,7 @@ export class Voice {
         const dur = release != null ? note.duration * tempoFactor : null;
         // Per-note gain: 1.0 baseline; channel gain handles volume/mute.
         this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, dur, release);
+        this.recentOnsets.push(audioTime);
       }
       this.scheduledIdx++;
     }
@@ -120,5 +136,25 @@ export class Voice {
   // True once every note in the part has been scheduled.
   get isExhausted() {
     return this.scheduledIdx >= this.notes.length;
+  }
+
+  // Pulse intensity in [0, 1] for the visual flash on note onsets.
+  // Returns the freshest onset's brightness (linear fade over `pulseDur`
+  // seconds) and trims stale entries while we're at it.
+  pulseIntensity(currentTime, pulseDur = 0.18) {
+    // Drop entries fully decayed.
+    while (this.recentOnsets.length && currentTime - this.recentOnsets[0] > pulseDur) {
+      this.recentOnsets.shift();
+    }
+    if (this.recentOnsets.length === 0) return 0;
+    // Find the most recent onset that's already started (audioTime <= now).
+    let latestStarted = -Infinity;
+    for (const t of this.recentOnsets) {
+      if (t <= currentTime && t > latestStarted) latestStarted = t;
+    }
+    if (latestStarted === -Infinity) return 0;
+    const dt = currentTime - latestStarted;
+    if (dt < 0 || dt > pulseDur) return 0;
+    return 1 - dt / pulseDur;
   }
 }

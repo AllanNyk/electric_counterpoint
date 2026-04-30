@@ -139,9 +139,13 @@ export class AudioEngine {
 
   // Schedule a buffered note on a voice channel.
   // `channel` is the object returned by createVoiceChannel (we connect
-  // through its channelGain). `duration` defaults to null for plucked
-  // instruments — let the sample's natural decay play out.
-  scheduleNote(channel, instrument, note, when, gain = 1.0, duration = null) {
+  // through its channelGain). When `releaseTime` is null (or duration is
+  // null) the sample plays its full natural decay — right for percussive
+  // hits like the woodblock click. Otherwise the gain envelope holds at
+  // full from `when` to `when + duration`, then linearly ramps to 0 over
+  // `releaseTime`. This trims the bleed between adjacent eighth notes
+  // without quantising onsets.
+  scheduleNote(channel, instrument, note, when, gain = 1.0, duration = null, releaseTime = null) {
     const key = `${instrument}:${note}`;
     const buf = this.buffers.get(key);
     if (!buf) return null;
@@ -151,9 +155,7 @@ export class AudioEngine {
     noteGain.gain.value = gain;
     src.connect(noteGain).connect(channel.channelGain);
     src.start(when);
-    if (duration != null) {
-      // Optional release envelope (for sustained banks added later).
-      const releaseTime = 0.02;
+    if (duration != null && releaseTime != null) {
       const stopAt = when + duration + releaseTime;
       noteGain.gain.setValueAtTime(gain, when + duration);
       noteGain.gain.linearRampToValueAtTime(0, stopAt);

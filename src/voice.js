@@ -17,6 +17,18 @@ const ROLE_GAIN = {
   click:  0.55,
 };
 
+// Per-role release time (seconds) applied after the note's written
+// duration. Karoryfer guitar samples are ~2.6 s natural decay; bass ~5 s.
+// 1.1 s on guitar trims the bleed between consecutive eighth notes
+// roughly in half. Bass holds longer (musically appropriate — the bass
+// is the harmonic anchor). Click is null = no envelope, natural decay.
+const ROLE_RELEASE = {
+  live:   1.1,
+  guitar: 1.1,
+  bass:   2.0,
+  click:  null,
+};
+
 export class Voice {
   constructor(part, audio, instrument) {
     this.part = part;
@@ -96,8 +108,10 @@ export class Voice {
       // negative score time when playback starts at t=0).
       if (audioTime >= this.audio.currentTime - 0.005) {
         const fname = this.filenameFor(note.midi);
+        const release = ROLE_RELEASE[this.role];
+        const dur = release != null ? note.duration * tempoFactor : null;
         // Per-note gain: 1.0 baseline; channel gain handles volume/mute.
-        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, null);
+        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, dur, release);
       }
       this.scheduledIdx++;
     }

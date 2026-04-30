@@ -139,8 +139,15 @@ export async function loadScore(url, partsMap) {
     const initDivEl = partEl.querySelector('attributes > divisions');
     const divisions = initDivEl ? parseInt(initDivEl.textContent, 10) : 256;
 
-    const oct = partEl.querySelector('attributes > transpose > octave-change');
-    const transposeSemitones = oct ? parseInt(oct.textContent, 10) * 12 : 0;
+    // NOTE on octave transposition: the XML often carries
+    // <octave-change>-1</octave-change> on guitar/bass parts (standard
+    // guitar-clef transposition). Applying it produces music that plays
+    // an octave below where it should sound — a common Sibelius export
+    // quirk where the transposition gets emitted even though the score
+    // is already notated at sounding pitch (treble-clef-with-8). We
+    // intentionally ignore octave-change so written pitch maps directly
+    // to sounding MIDI.
+    const transposeSemitones = 0;
 
     const { notes, totalSeconds } = parsePartTimeline(partEl, divisions, transposeSemitones);
 

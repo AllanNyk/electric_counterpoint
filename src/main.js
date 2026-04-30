@@ -106,8 +106,19 @@ async function chooseMovement(id) {
   playBtn.disabled = false;
 }
 
+function syncCanvasBitmap() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+}
+
 function applyStageLayout() {
-  if (!voices.length) return;
+  if (!voices.length || !activeScore) return;
+  // Page-load resizeCanvas ran while stage-view was display:none, so the
+  // canvas bitmap was set to 1×1 (rect was 0×0). Re-sync now that the
+  // stage is actually on screen.
+  syncCanvasBitmap();
   const rect = canvas.getBoundingClientRect();
   layout = computeLayout(rect.width, rect.height);
   listenerPos = defaultListenerPosition(layout);
@@ -270,15 +281,12 @@ playBtn.addEventListener('click', () => (isPlaying ? stopPlayback() : startPlayb
 const canvas = document.getElementById('stage-canvas');
 const ctx = canvas.getContext('2d');
 
-function resizeCanvas() {
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+function onResize() {
+  syncCanvasBitmap();
   if (voices.length) applyStageLayout();
 }
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
+window.addEventListener('resize', onResize);
+syncCanvasBitmap();
 
 // ---- render loop ----
 

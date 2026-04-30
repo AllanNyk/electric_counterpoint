@@ -169,19 +169,22 @@ build_woodblock() {
 # ---- run ----
 
 # Karoryfer black-and-green-guitars — clean Strat-ish electric, sustain (ord).
-# Chromatic A3..C7 in source. Output the same range; if the score asks for
-# notes outside this, widen the bounds and the script will pitch-shift the
-# nearest source.
+# Source range: chromatic A3..C7 (MIDI 57..96).
+# Output range: E2..C7 (MIDI 40..96). Notes below A3 are pitch-shifted from
+# A3 by up to 17 semitones — they sound darker / slower than the natural
+# tone but are listenable. Phase 7 swap palettes can supply a wider source.
 build_chromatic_bank \
-  "guitar_clean" 57 96 57 96 \
+  "guitar_clean" 57 96 40 96 \
   "https://raw.githubusercontent.com/sfzinstruments/karoryfer.black-and-green-guitars/main/Samples/black/ord" \
   "twang_" "_mf_rr1.wav" \
   "karoryfer-black-and-green/Samples/black/ord"
 
 # Karoryfer black-and-blue-basses — fingered electric bass, sustained (reg).
-# Chromatic B1..E5 in source.
+# Source range: chromatic B1..E5 (MIDI 35..76).
+# Output range: E1..E5 (MIDI 28..76). Reich's bass parts dip to A1; widen
+# the floor to E1 (4-string bass low E) for a small safety margin.
 build_chromatic_bank \
-  "bass_guitar" 35 76 35 76 \
+  "bass_guitar" 35 76 28 76 \
   "https://raw.githubusercontent.com/sfzinstruments/karoryfer.black-and-blue-basses/main/Samples/darkblack/reg" \
   "darkblack_" "_mf_rr1.wav" \
   "karoryfer-black-and-blue/Samples/darkblack/reg"

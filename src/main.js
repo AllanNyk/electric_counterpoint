@@ -49,6 +49,11 @@ const eqMidSlider   = document.getElementById('eq-mid-slider');
 const eqTrebleSlider= document.getElementById('eq-treble-slider');
 const resetBtn      = document.getElementById('reset-btn');
 
+const curtainEl       = document.getElementById('curtain');
+const curtainMovement = document.getElementById('curtain-movement');
+const curtainRestart  = document.getElementById('curtain-restart');
+const curtainMenu     = document.getElementById('curtain-menu');
+
 // Defaults — kept here in JS rather than relying on the slider's initial
 // value attribute because browsers cache form state across reloads.
 const DEFAULT_MASTER_VOL = 0.85;
@@ -472,14 +477,15 @@ function schedulerTick() {
     voice.scheduleAhead(playbackStart, scheduleUntil, tempoFactor);
   }
   // If every voice is exhausted AND we're past the last note's audio
-  // time + a little reverb tail, end gracefully.
+  // time + a little reverb tail, raise the curtain.
   if (voices.every(v => v.isExhausted)) {
     const endAudioTime = playbackStart + activeScore.duration * tempoFactor + 3;
     if (audio.currentTime >= endAudioTime) {
       isPlaying = false;
       playBtn.textContent = '▶ Play';
       playBtn.classList.remove('playing');
-      setStatus(`finished. press ▶ Play to listen again.`);
+      setStatus(`finished.`);
+      showCurtain();
       return;
     }
   }
@@ -490,6 +496,7 @@ function returnToMenu() {
   if (isPlaying) stopPlayback();
   stopRenderLoop();
   closeTouchPanel();
+  hideCurtain();
   stageViewEl.classList.remove('active');
   movementSelectEl.style.display = 'flex';
   requestAnimationFrame(() => movementSelectEl.classList.remove('fading'));
@@ -715,6 +722,45 @@ function resetAll() {
 }
 
 resetBtn.addEventListener('click', resetAll);
+
+// ---- endgame curtain ----
+//
+// Shown when the score finishes naturally (every voice exhausted plus a
+// 3-second reverb tail in schedulerTick). Two buttons: replay the same
+// movement, or pop back to the menu. Esc dismisses to the menu.
+
+function showCurtain() {
+  if (!activeMovement) return;
+  curtainMovement.textContent = activeMovement.label;
+  curtainEl.hidden = false;
+  // Force a reflow before adding .visible so the opacity transition
+  // actually fires (going from display:none to flex skips transitions).
+  void curtainEl.offsetWidth;
+  curtainEl.classList.add('visible');
+}
+
+function hideCurtain() {
+  if (curtainEl.hidden) return;
+  curtainEl.classList.remove('visible');
+  // Wait for the fade-out before yanking display:none.
+  setTimeout(() => { curtainEl.hidden = true; }, 600);
+}
+
+curtainRestart.addEventListener('click', () => {
+  hideCurtain();
+  // Small delay so the fade-out doesn't fight the audio resuming.
+  setTimeout(() => startPlayback(), 200);
+});
+curtainMenu.addEventListener('click', () => {
+  // returnToMenu hides the curtain itself.
+  returnToMenu();
+});
+window.addEventListener('keydown', (e) => {
+  if (!curtainEl.hidden && e.key === 'Escape') {
+    e.preventDefault();
+    returnToMenu();
+  }
+});
 
 // ---- render loop ----
 

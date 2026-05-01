@@ -257,6 +257,73 @@
       text-align: center;
     }
     .tp-swap-row[hidden] { display: none; }
+
+    /* Endgame curtain — fades in when the piece reaches its natural end. */
+    #curtain {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 8;
+      opacity: 0;
+      transition: opacity 2s ease;
+      pointer-events: none;
+    }
+    #curtain.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    #curtain[hidden] { display: none; }
+    .curtain-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 24px;
+      text-align: center;
+      max-width: 92vw;
+    }
+    .curtain-title {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 48px);
+      font-weight: 300;
+      letter-spacing: 0.04em;
+    }
+    .curtain-subtitle {
+      margin: 0;
+      color: var(--dim);
+      font-size: clamp(14px, 2vw, 18px);
+      font-weight: 300;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .curtain-thanks {
+      color: var(--dim);
+      font-style: italic;
+      margin: 24px 0 8px;
+      font-size: 16px;
+    }
+    .curtain-buttons {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 12px;
+    }
+    .curtain-buttons button {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      color: var(--fg);
+      padding: 12px 22px;
+      font: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+    .curtain-buttons button:hover { border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -316,6 +383,19 @@
     </div>
     <canvas id="stage-canvas"></canvas>
     <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+  </div>
+
+  <!-- Endgame curtain — fades in when the score finishes naturally. -->
+  <div id="curtain" hidden>
+    <div class="curtain-content">
+      <h1 class="curtain-title">Electric Counterpoint</h1>
+      <h2 class="curtain-subtitle" id="curtain-movement">III. Fast</h2>
+      <p class="curtain-thanks">thank you for listening</p>
+      <div class="curtain-buttons">
+        <button id="curtain-restart" type="button">Start over</button>
+        <button id="curtain-menu" type="button">Choose movement</button>
+      </div>
+    </div>
   </div>
 
   <!-- Touch panel: tap a voice on a touch device to open. -->

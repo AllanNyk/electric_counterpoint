@@ -8,27 +8,32 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - name: Sanity-check workspace
+        run: |
+          echo "files to upload:"
+          ls -la index.html src/ assets/audio/ir/
+          for d in guitar_clean guitar_acoustic bass_guitar woodblock; do
+            echo "$d: $(ls assets/audio/$d 2>/dev/null | wc -l) files"
+          done
       - name: Deploy via SFTP
         run: |
-          sshpass -p "${{ secrets.FTP_PASSWORD }}" sftp -o StrictHostKeyChecking=no "${{ secrets.FTP_USERNAME }}@${{ secrets.FTP_SERVER }}" <<'SFTP'
+          sshpass -p "${{ secrets.FTP_PASSWORD }}" sftp -v -o StrictHostKeyChecking=no -o BatchMode=no "${{ secrets.FTP_USERNAME }}@${{ secrets.FTP_SERVER }}" <<'SFTP'
           -mkdir webroots/www/electric_counterpoint
           -mkdir webroots/www/electric_counterpoint/src
           -mkdir webroots/www/electric_counterpoint/assets
           -mkdir webroots/www/electric_counterpoint/assets/audio
           -mkdir webroots/www/electric_counterpoint/assets/audio/guitar_clean
-          -mkdir webroots/www/electric_counterpoint/assets/audio/guitar_nylon
           -mkdir webroots/www/electric_counterpoint/assets/audio/guitar_acoustic
           -mkdir webroots/www/electric_counterpoint/assets/audio/bass_guitar
           -mkdir webroots/www/electric_counterpoint/assets/audio/woodblock
           -mkdir webroots/www/electric_counterpoint/assets/audio/ir
           put index.html webroots/www/electric_counterpoint/index.html
           put src/*.js webroots/www/electric_counterpoint/src/
-          -put assets/audio/guitar_clean/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_clean/
-          -put assets/audio/guitar_nylon/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_nylon/
-          -put assets/audio/guitar_acoustic/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_acoustic/
-          -put assets/audio/bass_guitar/*.mp3 webroots/www/electric_counterpoint/assets/audio/bass_guitar/
-          -put assets/audio/woodblock/*.mp3 webroots/www/electric_counterpoint/assets/audio/woodblock/
-          -put assets/audio/ir/theatre41.wav webroots/www/electric_counterpoint/assets/audio/ir/theatre41.wav
+          put assets/audio/guitar_clean/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_clean/
+          put assets/audio/guitar_acoustic/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_acoustic/
+          put assets/audio/bass_guitar/*.mp3 webroots/www/electric_counterpoint/assets/audio/bass_guitar/
+          put assets/audio/woodblock/*.mp3 webroots/www/electric_counterpoint/assets/audio/woodblock/
+          put assets/audio/ir/theatre41.wav webroots/www/electric_counterpoint/assets/audio/ir/theatre41.wav
           bye
           SFTP

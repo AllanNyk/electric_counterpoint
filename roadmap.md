@@ -4,141 +4,207 @@ A browser-based interactive realization of Steve Reich's *Electric
 Counterpoint* (1987). The user picks a movement, then conducts a top-down
 stage of guitars arranged in a half-moon facing a draggable listener.
 
-This document tracks the phased build order. Each phase is a listenable,
-playable artifact in its own right — we never build something we can't hear.
-See `CLAUDE.md` for the project guide and architecture notes.
+This document tracks the phased build order. Each phase was a listenable,
+playable artifact in its own right — we never built something we couldn't
+hear. See `CLAUDE.md` for the project guide and architecture notes.
+
+Phases 1–11 are complete and live at
+https://allansjoelin.com/electric_counterpoint/. The "Beyond core" section
+collects the items intentionally deferred.
 
 ---
 
-## Phase 1 — Scaffold + movement select ◐ (in progress)
+## Phase 1 — Scaffold + movement select ✓
 
-Single page boots to a movement-select menu. Mvt III is enabled; I & II
-are visibly disabled with "coming soon". Clicking III fades to a stage-view
-shell with a top bar (movement title + back button) and an empty canvas.
-"Back" returns to the menu.
-
-**Status:** scaffold landed; visual polish pending later phases.
+Movement-select menu (I, II, III). Mvt III enabled, I & II greyed out
+"coming soon". Clicking III fades to a stage-view shell with a top bar
+and an empty canvas. Back returns to the menu.
 
 ---
 
-## Phase 2 — Multi-part score parser
+## Phase 2 — Multi-part score parser ✓
 
-Build `src/score.js`. Walk every `<part>` in `III_fast.xml`, accumulate
-absolute-time note streams (handling ties, grace notes, divisions changes,
-tempo encoded at 120). Returns
-`{ parts: [{id, role, label, notes:[{time, midi, duration, isGrace, tieStop}]}], duration }`.
+`src/score.js` walks every `<part>` in `III_fast.xml`, accumulates
+absolute-time note streams (handling ties, grace notes, divisions
+changes, transpose). Returns
+`{ parts: [{id, role, label, notes:[{time, midi, duration, grace?}]}], duration }`.
 
-Smoke test: log per-part note counts and total duration; eyeball-verify
-against the score length.
+Smoke test landed alongside it: per-part note counts and per-role MIDI
+range printed to the stage placeholder so we could sanity-check note
+counts and discover which sample-bank ranges each role needed.
 
 ---
 
-## Phase 3 — Sample pipeline ◐ (in progress)
+## Phase 3 — Sample pipeline ✓
 
-Three core CC0 banks built by `tools/build_samples.sh`:
+Three CC0 banks built by `tools/build_samples.sh`:
 
-- `guitar_clean` — Karoryfer black-and-green-guitars, chromatic A3..C7
+- `guitar_clean` — Karoryfer black-and-green-guitars, chromatic E2..C7
   (default for live + guitars 1-7)
-- `bass_guitar` — Karoryfer black-and-blue-basses, chromatic B1..E5
+- `bass_guitar` — Karoryfer black-and-blue-basses, chromatic E1..E5
   (Bg1, Bg2)
-- `woodblock` — VCSL single click (P11)
+- `woodblock` — VCSL single click (P11), pre-amplified +12 dB
 
 Script flow: curl WAVs from GitHub raw URLs into `tools/.cache/`, then
 ffmpeg pitch-shifts to chromatic mp3 banks under
-`assets/audio/<instrument>/<note>.mp3`. Sharps written as `s` (`cs4 = C#4`)
-for URL safety, mirroring `in_c`.
+`assets/audio/<instrument>/<note>.mp3`. Sharps written as `s`
+(`cs4 = C#4`) for URL safety.
 
-Phase 7 will add `guitar_nylon` and `guitar_acoustic` for the swap palette
-(VCSL has no guitars; Karoryfer has no nylon — likely picks: Iowa MIS for
-nylon, `karoryfer.shinyguitar` for acoustic-ish archtop).
-
----
-
-## Phase 4 — Audio engine + first audible playback
-
-Build `src/audio.js` and `src/voice.js`. Per-voice positional chain:
-dry-path panner + wet-path send to a shared convolver. Master EQ +
-compressor + reverb wired through. Schedule the whole score from t=0 once
-the user clicks "play" and listen end-to-end. Voices stationary at the
-canvas center — no spatial movement yet.
-
-Goal of this phase: the score plays, mixed, in time.
+Phase 7 added `guitar_acoustic` (Karoryfer shinyguitar) for the swap
+palette — needed a `src_label_offset = -12` because that library labels
+its files an octave below the sounding pitch.
 
 ---
 
-## Phase 5 — Stage view + half-moon layout
+## Phase 4 — Audio engine + first audible playback ✓
 
-Build `src/layout.js`. Compute default positions: live in front-center,
-Guitars 1-7 along the arc (left → center), Bg1/Bg2 on the right flank,
-click fixed center-back. Draw stage edge, listener dot, voice circles.
-No drag yet.
+`src/audio.js` and `src/voice.js`. Per-voice positional chain with
+dry-path panner and a wet-path send to a shared convolver, even though
+this phase held everyone at center pan with a fixed reverb send. Master
+EQ + compressor + reverb wired through. Schedule the whole score from
+t=0 once the user clicks Play and listen end-to-end.
 
----
-
-## Phase 6 — Drag (listener + voices) → live spatial audio
-
-Pointer-down on listener / voice / click → drag-to-move, constrained to
-stage. On drag, recompute pan + dryGain + wetSend per voice. Smooth via
-`setTargetAtTime`.
-
-This phase is where the central mechanic clicks: hear the mix shift as
-guitars move around the listener.
+Surprise on first audible: every guitar/bass part played an octave too
+low because the parser was applying `<octave-change>-1</octave-change>`
+on top of an already-sounding-pitch score. Fixed by ignoring
+octave-change in the parser. Plucked-sample decay was also too long
+and bled across eighths — added per-role release envelopes
+(guitar 1.1 s, bass 2.0 s).
 
 ---
 
-## Phase 7 — Per-voice controls
+## Phase 5 — Stage view + half-moon layout ✓
 
-- Scroll wheel = volume
-- M = mute (~150 ms exponential fade)
-- ←/→ = swap instrument (live + guitars 1-7 only; bass and click excluded)
-- Mobile touch panel parity (same actions as buttons)
+`src/layout.js` — top-down stage geometry computed from canvas dims.
+Live in front-center, guitars 1-7 along the arc (left → center), Bg1/
+Bg2 on the right flank, click at back-left of stage. Stage floor +
+back-arc guide line, voice circles with role-driven color (cool blues
+hue-shifted across the 7 numbered guitars, warm orange for live, dark
+plum for bass, wood-tone for click). Listener dot at bottom-center
+with a forward-facing tick.
+
+Each note onset triggers a 180 ms brightness pulse on its voice's
+circle (the closest thing to In C's rhythm rings; rest of the
+visualization layer was intentionally skipped).
+
+Initial bug: page-load resizeCanvas ran while stage-view was hidden
+so the canvas was 1×1 stretched to the viewport — looked white/dark
+depending on browser. Fixed by re-syncing the canvas bitmap on
+applyStageLayout.
 
 ---
 
-## Phase 8 — Top bar
+## Phase 6 — Drag (listener + voices) → live spatial audio ✓
 
-Master volume, tempo (default 192 for mvt III), reverb wet, bass/mid/treble
-EQ. Tempo slider re-applies on every scheduling boundary.
+Pointer events on the canvas drive a small drag system. `clampToStage`
+in layout.js keeps everything inside the half-moon. `recomputeSpatial`
+walks every voice on each drag and updates pan + dryGain + wetSend via
+`setTargetAtTime` (25 ms time constant — smooth slides, no zipper
+noise).
+
+This is where the central mechanic clicks: drag a guitar far from the
+listener and you hear it recede + pick up reverb send.
 
 ---
 
-## Phase 9 — Endgame curtain
+## Phase 7 — Per-voice controls ✓
 
-Detect when the longest part has finished, wait ~3 s for the natural
-reverb tail, fade to a quiet curtain:
+- Hover (mouse) → cursor=grab + small canvas-drawn hover panel showing
+  voice label, instrument, volume bar, and shortcut hints
+- Scroll wheel on hovered voice → volume up/down
+- M on hovered voice → mute / unmute (~150 ms exponential fade)
+- ←/→ on hovered live or guitar voice → cycle through GUITAR_PALETTE
+- Tap (touch) on a voice → bottom touch panel slides in: volume slider,
+  mute button, prev/next instrument arrows
+- Tap-vs-drag distinguished by 6 px movement threshold; tap on empty
+  space closes the touch panel
+
+---
+
+## Phase 8 — Top bar ✓
+
+Six compact range inputs: Vol, Tempo (with live BPM display), Reverb
+wet, Bass, Mid, Treble. Plus a Reset button that restores all sliders
+to defaults, voice positions to canonical layout, per-voice
+volume/mute/instrument to defaults.
+
+Mid-piece tempo change pivots `playbackStart` so the current score
+position stays put across the change (already-scheduled notes within
+the 0.5 s lookahead window play at the old timing).
+
+---
+
+## Phase 9 — Endgame curtain ✓
+
+`schedulerTick` detects "every voice exhausted + 3 s reverb tail" and
+raises a full-viewport curtain (z-index 8, 2 s fade-in):
 
 ```
-Electric Counterpoint — III. Fast
+Electric Counterpoint
+III. Fast
 thank you for listening
 [ Start over ]   [ Choose movement ]
 ```
 
----
-
-## Phase 10 — Onboarding + help/about
-
-A few transient hints over the first 30 s of playback (drag the listener,
-drag a guitar, mute with M, swap with ←/→). Help modal `?` lists controls.
-About modal credits Reich, VCSL, Theatre@41 IR.
+Esc dismisses to the menu. Start over restores masterGain and replays.
 
 ---
 
-## Phase 11 — Mobile QA + deploy
+## Phase 10 — Onboarding + help / about ✓
 
-Pointer events, touch panel, viewport-zoom locked, defensive
-`audio.ctx.resume()` on every pointerdown. GitHub Actions workflow uploads
-to `webroots/www/electric_counterpoint/` on push to master (mirrors `in_c`).
+Three transient hints fade across the bottom of the canvas during the
+first ~32 s of the user's first playback in this session (drag voices,
+hover/tap for controls, ? for the full reference). `hintsCompleted`
+latches so they don't repeat on second Play.
+
+Help modal (`?` button + key) lists all controls. About modal credits
+Reich + Karoryfer + VCSL + Theatre@41 IR + sister-project link to In C
++ GitHub source.
+
+A single Esc handler with priority `modal → curtain → touch panel`
+ensures one Esc press always picks the right thing.
+
+---
+
+## Phase 11 — Mobile QA + deploy ✓
+
+Verified at 390×844 (iPhone 12 viewport): top bar wraps cleanly to
+multiple rows, stage half-moon scales down with all 11 voices visible,
+touch panel slides in over the stage. Canvas gets explicit
+`touch-action: none` so iOS Safari's gesture handlers don't preempt
+pointer events. AudioContext defensively resumes on every pointerdown.
+
+Open Graph + meta description for shared-link previews. GitHub Actions
+workflow uploads to `webroots/www/electric_counterpoint/` on push to
+master via SFTP. First deploy needed `actions/checkout@v5` (Node 20
+deprecated) and `-v` on sftp to debug a 255-exit auth issue.
 
 ---
 
 ## Beyond core (future)
 
-- **Visualization deepening** — selectively port from `in_c`: rhythm rings
-  on note onsets, polyrhythmic sparkles between out-of-phase voices,
-  unison-strand brightening when canon converges. Intentionally deferred.
-- **Movements I & II** — author MusicXMLs, enable buttons.
-- **Marimba arrangement** — Reich's piece has been performed on marimbas;
-  add a marimba palette as a non-guitar swap option.
-- **Performance recording** — capture the spatial mix as audio.
-- **Stage rotation** — rotate the listener's facing direction (currently
-  fixed). Would need HRTF-style binaural rather than simple stereo pan.
+- **Movements I & II.** Author the MusicXMLs (live + 12 guitars + 2
+  bass + click each) and flip `available: true` in `movements.js`.
+  Verify the half-moon layout handles 12 numbered guitars; current
+  geometry should scale but spacing wants confirming.
+- **Visualization deepening.** Selectively port from `in_c`: rhythm
+  rings on note onsets, polyrhythmic sparkles between out-of-phase
+  voices, unison-strand brightening when canon converges. Held back so
+  the meditative legibility of the stage stays intact; revisit after
+  movements I & II are in.
+- **Marimba / vibraphone palette.** Reich's piece has authorised
+  arrangements for marimbas and similar mallet ensembles. Add a
+  non-guitar palette as an additional swap option.
+- **Nylon / classical guitar in the swap palette.** No CC0 nylon source
+  on GitHub; Iowa MIS Classical Guitar (public domain) is the most
+  likely candidate, but it'd need a manual download step in
+  build_samples.sh.
+- **OG preview image.** Render a wide stage screenshot (1200 × 630)
+  for richer link previews on social.
+- **Audio recording / WAV export.** Capture the spatial mix as audio
+  using `MediaStreamDestination` + `MediaRecorder`, downloadable.
+- **Stage rotation / binaural.** Rotate the listener's facing
+  direction (currently fixed pointing forward). Would need HRTF-style
+  binaural rather than simple StereoPanner pan.
+- **Wider tempo / piece-end controls.** Optional looping, scrub bar,
+  jump-to-marker for working with specific sections of the piece.

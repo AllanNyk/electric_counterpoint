@@ -177,7 +177,11 @@ build_woodblock() {
     echo "[woodblock] ERROR: failed to fetch $url"
     return 1
   fi
-  ffmpeg -y -loglevel error -i "$RESULT_PATH" -ac 1 -ar "$TARGET_RATE" -b:a "$MP3_BITRATE" "$out_dir/click.mp3"
+  # +12 dB boost — VCSL wood_click_mp is recorded soft (mp = mezzo-
+  # piano). At our default click channel gain it was barely audible
+  # over the guitars; baking the boost into the file keeps the sample
+  # itself at a usable peak.
+  ffmpeg -y -loglevel error -i "$RESULT_PATH" -af "volume=4.0" -ac 1 -ar "$TARGET_RATE" -b:a "$MP3_BITRATE" "$out_dir/click.mp3"
   echo "[woodblock] -> $out_dir/click.mp3"
 }
 

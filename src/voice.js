@@ -14,7 +14,7 @@ const ROLE_GAIN = {
   live:   1.10,
   guitar: 0.90,
   bass:   0.85,
-  click:  0.55,
+  click:  0.75,
 };
 
 // Per-role release time (seconds) applied after the note's written

@@ -171,6 +171,66 @@
       font-size: 14px;
       letter-spacing: 0.06em;
     }
+
+    /* Touch panel — opens on tap (touch only) over a voice. */
+    #touch-panel {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: var(--panel);
+      border-top: 1px solid var(--panel-border);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 5;
+      box-shadow: 0 -4px 18px rgba(0,0,0,0.5);
+    }
+    #touch-panel[hidden] { display: none; }
+    .tp-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .tp-title {
+      font-size: 16px;
+      font-weight: 500;
+      flex: 1;
+      letter-spacing: 0.04em;
+    }
+    .tp-role {
+      color: var(--dim);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .tp-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    .tp-row label {
+      color: var(--dim);
+      font-size: 13px;
+      min-width: 64px;
+    }
+    .tp-row button {
+      background: transparent;
+      border: 1px solid var(--panel-border);
+      color: var(--fg);
+      padding: 8px 14px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .tp-row button:hover:not(:disabled) { border-color: var(--accent); }
+    #tp-mute.muted { color: var(--accent); border-color: var(--accent); }
+    .tp-instrument-label {
+      color: var(--dim);
+      font-size: 13px;
+      flex: 1;
+      text-align: center;
+    }
+    .tp-swap-row[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -203,6 +263,27 @@
     </div>
     <canvas id="stage-canvas"></canvas>
     <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+  </div>
+
+  <!-- Touch panel: tap a voice on a touch device to open. -->
+  <div id="touch-panel" hidden>
+    <div class="tp-row">
+      <span class="tp-title" id="tp-title">Live</span>
+      <span class="tp-role" id="tp-role">live</span>
+      <button id="tp-close" type="button">✕</button>
+    </div>
+    <div class="tp-row">
+      <label for="tp-volume">Volume</label>
+      <input type="range" id="tp-volume" min="0" max="1.5" step="0.01" autocomplete="off">
+    </div>
+    <div class="tp-row">
+      <button id="tp-mute" type="button">Mute</button>
+    </div>
+    <div class="tp-row tp-swap-row" id="tp-swap-row">
+      <button id="tp-prev" type="button">← Prev</button>
+      <span class="tp-instrument-label" id="tp-instrument-label">Clean Electric</span>
+      <button id="tp-next" type="button">Next →</button>
+    </div>
   </div>
 
   <script type="module" src="src/main.js"></script>

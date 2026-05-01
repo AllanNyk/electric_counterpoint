@@ -189,6 +189,18 @@ build_chromatic_bank \
   "darkblack_" "_mf_rr1.wav" \
   "karoryfer-black-and-blue/Samples/darkblack/reg"
 
+# Karoryfer shinyguitar — archtop / acoustic-leaning electric. CC0,
+# master branch. Source has 17 sample points spanning Db2..C6 at minor-
+# third spacing under Samples/acoustic/. We iterate chromatically and
+# the build helper skips 404s, then pitch-shifts the nearest available
+# source up to fill chromatic. Filenames carry no prefix and use
+# `_vl1_rr1_1.wav` for the softest velocity, first round-robin.
+build_chromatic_bank \
+  "guitar_acoustic" 37 84 40 96 \
+  "https://raw.githubusercontent.com/sfzinstruments/karoryfer.shinyguitar/master/Samples/acoustic" \
+  "" "_vl1_rr1_1.wav" \
+  "karoryfer-shinyguitar/Samples/acoustic"
+
 build_woodblock
 
 echo

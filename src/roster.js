@@ -10,11 +10,28 @@ export const ROLE_TO_DEFAULT_INSTRUMENT = {
   click:  'woodblock',
 };
 
-// Phase-7 swap palette. live + guitar voices cycle through these; bass
-// and click are not swappable (separate scoring role).
+// Swap palette. live + guitar voices cycle through these via ←/→ keys
+// or the touch-panel arrows. Bass and click stay locked to their own
+// banks — they have a specific scoring role in the piece.
 export const GUITAR_PALETTE = [
   { id: 'guitar_clean',    label: 'Clean Electric' },
-  // Added in phase 7:
-  // { id: 'guitar_nylon',    label: 'Nylon' },
-  // { id: 'guitar_acoustic', label: 'Acoustic' },
+  { id: 'guitar_acoustic', label: 'Acoustic' },
+  // A 'guitar_nylon' entry can be added once a CC0 nylon bank is sourced
+  // (Iowa MIS Classical Guitar is the most likely candidate; not on
+  // GitHub so it'll need a manual download step).
 ];
+
+export function isSwappable(role) {
+  return role === 'live' || role === 'guitar';
+}
+
+export function instrumentLabel(id) {
+  return GUITAR_PALETTE.find(p => p.id === id)?.label ?? id;
+}
+
+export function nextInstrument(currentId, dir) {
+  const idx = GUITAR_PALETTE.findIndex(p => p.id === currentId);
+  if (idx < 0) return currentId;
+  const n = GUITAR_PALETTE.length;
+  return GUITAR_PALETTE[(idx + dir + n) % n].id;
+}

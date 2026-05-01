@@ -11,7 +11,14 @@ import { MOVEMENTS, getMovement } from './movements.js';
 import { loadScore, ENCODED_BPM } from './score.js';
 import { AudioEngine } from './audio.js';
 import { Voice } from './voice.js';
-import { ROLE_TO_DEFAULT_INSTRUMENT } from './roster.js';
+import {
+  ROLE_TO_DEFAULT_INSTRUMENT,
+  GUITAR_PALETTE,
+  isSwappable,
+  instrumentLabel,
+  nextInstrument,
+} from './roster.js';
+import { midiToFilename } from './score.js';
 import {
   computeLayout,
   initialVoicePositions,
@@ -85,11 +92,27 @@ async function chooseMovement(id) {
   });
 
   // Load the IR + every needed sample in parallel before enabling Play.
+  // Also pre-load every entry in the swap palette for swappable voices
+  // (live + guitars), so the ←/→ swap is instant — no network stall on
+  // first switch. Bass and click stay locked to their default banks.
   setStatus('loading samples and IR…');
+  const paletteIds = GUITAR_PALETTE.map(p => p.id);
+  const palettePreloads = [];
+  for (const v of voices) {
+    if (!isSwappable(v.role)) continue;
+    const uniqueMidis = new Set(v.notes.map(n => n.midi));
+    for (const id of paletteIds) {
+      if (id === v.instrument) continue; // covered by v.loadSamples()
+      for (const midi of uniqueMidis) {
+        palettePreloads.push(audio.loadSample(id, midiToFilename(midi)));
+      }
+    }
+  }
   try {
     await Promise.all([
       audio.loadIR('assets/audio/ir/theatre41.wav'),
       ...voices.map(v => v.loadSamples()),
+      ...palettePreloads,
     ]);
   } catch (err) {
     setStatus(`failed to load audio: ${err.message}`);
@@ -163,11 +186,21 @@ function recomputeSpatial() {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// ---- pointer drag ----
+// ---- pointer drag + hover + tap ----
+//
+// Mouse: drag to move; hover sets `hoveredVoice` so wheel/keyboard act
+// on whatever's under the cursor. Touch: drag still works, but a tap
+// (pointerdown→pointerup with no significant movement) opens the touch
+// panel for that voice instead. We distinguish tap vs drag by tracking
+// whether the pointer moved past TAP_SLOP_PX while held.
+
+const TAP_SLOP_PX = 6;
 
 let dragTarget = null;       // 'listener' | Voice | null
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+let dragStart = null;        // { x, y, pointerType, moved }
+let hoveredVoice = null;     // Voice | null — drives wheel + keyboard
 
 function pointerCoords(e) {
   const rect = canvas.getBoundingClientRect();
@@ -199,12 +232,17 @@ function onPointerDown(e) {
   if (!layout) return;
   const { x, y } = pointerCoords(e);
   const target = hitTest(x, y);
-  if (!target) return;
+  if (!target) {
+    // Tap on empty space (touch only) closes the touch panel.
+    if (e.pointerType === 'touch') closeTouchPanel();
+    return;
+  }
   e.preventDefault();
   if (canvas.setPointerCapture) {
     try { canvas.setPointerCapture(e.pointerId); } catch {}
   }
   dragTarget = target;
+  dragStart = { x, y, pointerType: e.pointerType, moved: false };
   if (target === 'listener') {
     dragOffsetX = listenerPos.x - x;
     dragOffsetY = listenerPos.y - y;
@@ -218,6 +256,9 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!dragTarget || !layout) return;
   const { x, y } = pointerCoords(e);
+  if (dragStart && Math.hypot(x - dragStart.x, y - dragStart.y) > TAP_SLOP_PX) {
+    dragStart.moved = true;
+  }
   const clamped = clampToStage(x + dragOffsetX, y + dragOffsetY, layout);
   if (dragTarget === 'listener') {
     listenerPos = { x: clamped.x, y: clamped.y };
@@ -231,7 +272,18 @@ function onPointerUp(e) {
   if (canvas.releasePointerCapture && e?.pointerId != null) {
     try { canvas.releasePointerCapture(e.pointerId); } catch {}
   }
+  // Touch + tap (no drag) on a voice opens the touch panel.
+  if (
+    dragStart &&
+    !dragStart.moved &&
+    dragStart.pointerType === 'touch' &&
+    dragTarget &&
+    dragTarget !== 'listener'
+  ) {
+    openTouchPanel(dragTarget);
+  }
   dragTarget = null;
+  dragStart = null;
   canvas.style.cursor = '';
 }
 
@@ -360,6 +412,7 @@ function schedulerTick() {
 function returnToMenu() {
   if (isPlaying) stopPlayback();
   stopRenderLoop();
+  closeTouchPanel();
   stageViewEl.classList.remove('active');
   movementSelectEl.style.display = 'flex';
   requestAnimationFrame(() => movementSelectEl.classList.remove('fading'));
@@ -367,6 +420,7 @@ function returnToMenu() {
   voices = [];
   layout = null;
   listenerPos = null;
+  hoveredVoice = null;
   playBtn.disabled = true;
   playBtn.textContent = '▶ Play';
   playBtn.classList.remove('playing');
@@ -399,13 +453,127 @@ canvas.addEventListener('pointermove', onPointerMove);
 canvas.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 
-// Hover cursor: shift to "grab" when over a draggable item.
+// Hover state: shift cursor + remember which voice is under the pointer
+// so wheel + keyboard shortcuts know what to act on.
 canvas.addEventListener('pointermove', (e) => {
   if (dragTarget) return; // already grabbing
   if (!layout) return;
   const { x, y } = pointerCoords(e);
-  canvas.style.cursor = hitTest(x, y) ? 'grab' : '';
+  const target = hitTest(x, y);
+  hoveredVoice = (target && target !== 'listener') ? target : null;
+  canvas.style.cursor = target ? 'grab' : '';
 });
+canvas.addEventListener('pointerleave', () => {
+  if (!dragTarget) hoveredVoice = null;
+});
+
+// ---- volume scroll wheel ----
+canvas.addEventListener('wheel', (e) => {
+  if (!hoveredVoice) return;
+  e.preventDefault();
+  // Scroll up = louder. 0.06 per detent feels close to In C's response.
+  const delta = -Math.sign(e.deltaY) * 0.06;
+  hoveredVoice.setVolume(hoveredVoice.userVolume + delta);
+  // If the touch panel happens to be showing this voice, sync its slider.
+  syncTouchPanelIfShowing(hoveredVoice);
+}, { passive: false });
+
+// ---- keyboard shortcuts ----
+window.addEventListener('keydown', (e) => {
+  if (!stageViewEl.classList.contains('active')) return;
+  const tag = e.target?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  if (e.key === 'm' || e.key === 'M') {
+    if (hoveredVoice) {
+      e.preventDefault();
+      hoveredVoice.setMuted(!hoveredVoice.muted);
+      syncTouchPanelIfShowing(hoveredVoice);
+    }
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (hoveredVoice && isSwappable(hoveredVoice.role)) {
+      e.preventDefault();
+      const dir = e.key === 'ArrowRight' ? 1 : -1;
+      const next = nextInstrument(hoveredVoice.instrument, dir);
+      hoveredVoice.changeInstrument(next);
+      syncTouchPanelIfShowing(hoveredVoice);
+    }
+  } else if (e.key === 'Escape') {
+    if (touchPanelVoice) closeTouchPanel();
+  }
+});
+
+// ---- touch panel ----
+//
+// Opens on tap of a voice (touch only — desktop uses hover + keys).
+// Mirrors all the controls available via wheel/keyboard so mobile has
+// parity. Bass and click voices show only volume + mute (the swap row
+// stays hidden because their bank is fixed by scoring role).
+
+const touchPanelEl    = document.getElementById('touch-panel');
+const tpTitle         = document.getElementById('tp-title');
+const tpRole          = document.getElementById('tp-role');
+const tpVolume        = document.getElementById('tp-volume');
+const tpMute          = document.getElementById('tp-mute');
+const tpSwapRow       = document.getElementById('tp-swap-row');
+const tpInstrument    = document.getElementById('tp-instrument-label');
+const tpPrev          = document.getElementById('tp-prev');
+const tpNext          = document.getElementById('tp-next');
+const tpClose         = document.getElementById('tp-close');
+
+let touchPanelVoice = null;
+
+function openTouchPanel(voice) {
+  touchPanelVoice = voice;
+  tpTitle.textContent = voice.label;
+  tpRole.textContent = voice.role;
+  refreshTouchPanel();
+  touchPanelEl.hidden = false;
+}
+
+function closeTouchPanel() {
+  touchPanelEl.hidden = true;
+  touchPanelVoice = null;
+}
+
+function refreshTouchPanel() {
+  if (!touchPanelVoice) return;
+  const v = touchPanelVoice;
+  tpVolume.value = String(v.userVolume);
+  tpMute.textContent = v.muted ? 'Unmute' : 'Mute';
+  tpMute.classList.toggle('muted', v.muted);
+  if (isSwappable(v.role)) {
+    tpSwapRow.hidden = false;
+    tpInstrument.textContent = instrumentLabel(v.instrument);
+  } else {
+    tpSwapRow.hidden = true;
+  }
+}
+
+function syncTouchPanelIfShowing(voice) {
+  if (touchPanelVoice === voice) refreshTouchPanel();
+}
+
+tpVolume.addEventListener('input', () => {
+  if (!touchPanelVoice) return;
+  touchPanelVoice.setVolume(parseFloat(tpVolume.value));
+});
+tpMute.addEventListener('click', () => {
+  if (!touchPanelVoice) return;
+  touchPanelVoice.setMuted(!touchPanelVoice.muted);
+  refreshTouchPanel();
+});
+tpPrev.addEventListener('click', () => {
+  if (!touchPanelVoice || !isSwappable(touchPanelVoice.role)) return;
+  touchPanelVoice.changeInstrument(nextInstrument(touchPanelVoice.instrument, -1));
+  refreshTouchPanel();
+});
+tpNext.addEventListener('click', () => {
+  if (!touchPanelVoice || !isSwappable(touchPanelVoice.role)) return;
+  touchPanelVoice.changeInstrument(nextInstrument(touchPanelVoice.instrument, 1));
+  refreshTouchPanel();
+});
+tpClose.addEventListener('click', closeTouchPanel);
 
 // ---- render loop ----
 

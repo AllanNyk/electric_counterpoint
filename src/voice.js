@@ -83,6 +83,15 @@ export class Voice {
     }
   }
 
+  // Switch to a new instrument bank. Currently-playing notes finish on
+  // the old samples (already scheduled); future scheduleAhead calls pick
+  // up the new bank automatically. Caller must ensure samples for the
+  // new bank are pre-loaded — main.js loads the whole swap palette at
+  // movement-select time so this is a synchronous, instant switch.
+  changeInstrument(newInstrumentId) {
+    this.instrument = newInstrumentId;
+  }
+
   // Filename token for a given MIDI on this voice. Click is unpitched —
   // always returns 'click', so the woodblock single sample serves every
   // notated pitch in the click part.

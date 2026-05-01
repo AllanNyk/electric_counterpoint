@@ -3,8 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Electric Counterpoint</title>
+  <title>Electric Counterpoint — interactive</title>
   <link rel="icon" href="data:,">
+  <meta name="description" content="Interactive realisation of Steve Reich's Electric Counterpoint (1987). Conduct a top-down stage of guitars and basses with real-time spatial audio.">
+  <meta property="og:title" content="Electric Counterpoint — interactive">
+  <meta property="og:description" content="Interactive realisation of Steve Reich's Electric Counterpoint (1987). Conduct a top-down stage of guitars and basses with real-time spatial audio.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://allansjoelin.com/electric_counterpoint/">
   <style>
     :root {
       --bg: #0e0e10;
@@ -183,6 +188,10 @@
       width: 100%;
       display: block;
       background: var(--bg);
+      /* Block touch gestures (scroll / pinch / double-tap-zoom) so the
+         pointer events we listen for aren't preempted by the browser's
+         own gesture handlers — important on iOS Safari. */
+      touch-action: none;
     }
 
     /* Phase 1 placeholder text inside the stage view */

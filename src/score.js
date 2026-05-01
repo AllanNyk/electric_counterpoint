@@ -28,13 +28,28 @@ export function midiToFilename(midi) {
 
 function readPitch(noteEl, transposeSemitones) {
   const pitchEl = noteEl.querySelector('pitch');
-  if (!pitchEl) return null;
-  const step = pitchEl.querySelector('step').textContent.trim();
-  const octave = parseInt(pitchEl.querySelector('octave').textContent, 10);
-  const alterEl = pitchEl.querySelector('alter');
-  const alter = alterEl ? parseInt(alterEl.textContent, 10) : 0;
-  const written = (octave + 1) * 12 + STEP_TO_SEMITONE[step] + alter;
-  return written + transposeSemitones;
+  if (pitchEl) {
+    const step = pitchEl.querySelector('step').textContent.trim();
+    const octave = parseInt(pitchEl.querySelector('octave').textContent, 10);
+    const alterEl = pitchEl.querySelector('alter');
+    const alter = alterEl ? parseInt(alterEl.textContent, 10) : 0;
+    const written = (octave + 1) * 12 + STEP_TO_SEMITONE[step] + alter;
+    return written + transposeSemitones;
+  }
+  // Unpitched percussion (e.g. the wood-block click track in mvt III).
+  // Use the notational display pitch so the note still has a MIDI value
+  // — the click Voice maps every MIDI to the same sample anyway, but
+  // returning null here would silently drop every wood-block note from
+  // the parsed timeline.
+  const unpitchedEl = noteEl.querySelector('unpitched');
+  if (unpitchedEl) {
+    const stepEl = unpitchedEl.querySelector('display-step');
+    const octEl = unpitchedEl.querySelector('display-octave');
+    const step = stepEl ? stepEl.textContent.trim() : 'C';
+    const octave = octEl ? parseInt(octEl.textContent, 10) : 4;
+    return (octave + 1) * 12 + STEP_TO_SEMITONE[step];
+  }
+  return null;
 }
 
 function parsePartTimeline(partEl, initialDivisions, transposeSemitones) {

@@ -102,11 +102,13 @@ export class Voice {
   }
 
   // Pre-load every sample this part will need so playback never stalls
-  // mid-piece on a network round-trip. The click voice plays a
-  // synthesised noise burst (see audio.scheduleClick) so it has nothing
-  // to fetch.
+  // mid-piece on a network round-trip. The click voice always plays a
+  // single unpitched sample (see filenameFor), so we only need that one.
   async loadSamples() {
-    if (this.role === 'click') return;
+    if (this.role === 'click') {
+      await this.audio.loadSample(this.instrument, 'click');
+      return;
+    }
     const uniqueMidis = new Set(this.notes.map(n => n.midi));
     await Promise.all(
       [...uniqueMidis].map(midi => this.audio.loadSample(this.instrument, midiToFilename(midi)))

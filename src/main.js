@@ -47,6 +47,7 @@ const reverbSlider  = document.getElementById('reverb-slider');
 const eqBassSlider  = document.getElementById('eq-bass-slider');
 const eqMidSlider   = document.getElementById('eq-mid-slider');
 const eqTrebleSlider= document.getElementById('eq-treble-slider');
+const resetBtn      = document.getElementById('reset-btn');
 
 // Defaults — kept here in JS rather than relying on the slider's initial
 // value attribute because browsers cache form state across reloads.
@@ -672,6 +673,48 @@ eqMidSlider.addEventListener('input', () => {
 eqTrebleSlider.addEventListener('input', () => {
   audio.setEqTreble(parseFloat(eqTrebleSlider.value));
 });
+
+// Reset everything that the user can change while playing back to its
+// out-of-the-box state for the current movement: top-bar sliders to
+// defaults, per-voice volumes / mutes / instruments to defaults, and
+// the stage layout (voice positions + listener) to the canonical
+// half-moon. The audio engine state follows the slider values.
+function resetAll() {
+  if (!activeMovement || !voices.length) return;
+
+  // Top-bar sliders.
+  volSlider.value      = String(DEFAULT_MASTER_VOL);
+  reverbSlider.value   = String(DEFAULT_REVERB_WET);
+  eqBassSlider.value   = String(DEFAULT_EQ_DB);
+  eqMidSlider.value    = String(DEFAULT_EQ_DB);
+  eqTrebleSlider.value = String(DEFAULT_EQ_DB);
+  tempoSlider.value    = String(activeMovement.notatedBPM);
+  masterVolume = DEFAULT_MASTER_VOL;
+  audio.setMasterGain(masterVolume);
+  audio.setReverbWet(DEFAULT_REVERB_WET);
+  audio.setEqBass(DEFAULT_EQ_DB);
+  audio.setEqMid(DEFAULT_EQ_DB);
+  audio.setEqTreble(DEFAULT_EQ_DB);
+  setTempo(activeMovement.notatedBPM);
+
+  // Per-voice state.
+  for (const v of voices) {
+    if (v.muted) v.setMuted(false);
+    v.setVolume(v.defaultVolume);
+    if (isSwappable(v.role)) {
+      v.changeInstrument(ROLE_TO_DEFAULT_INSTRUMENT[v.role]);
+    }
+  }
+
+  // Stage geometry — also recomputes spatial audio for each voice from
+  // its newly-reset position.
+  applyStageLayout();
+
+  // Sync any visible touch panel with the new state.
+  if (touchPanelVoice) refreshTouchPanel();
+}
+
+resetBtn.addEventListener('click', resetAll);
 
 // ---- render loop ----
 

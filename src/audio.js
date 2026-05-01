@@ -141,11 +141,16 @@ export class AudioEngine {
   // `channel` is the object returned by createVoiceChannel (we connect
   // through its channelGain). When `releaseTime` is null (or duration is
   // null) the sample plays its full natural decay — right for percussive
-  // hits like the woodblock click. Otherwise the gain envelope holds at
-  // full from `when` to `when + duration`, then linearly ramps to 0 over
-  // `releaseTime`. This trims the bleed between adjacent eighth notes
-  // without quantising onsets.
+  // hits. Otherwise the gain envelope holds at full from `when` to
+  // `when + duration`, then linearly ramps to 0 over `releaseTime`.
+  // This trims the bleed between adjacent eighth notes without
+  // quantising onsets.
+  //
+  // The "woodblock" instrument is special-cased to a synthesised click
+  // — a short bandpassed-noise burst that sounds like a true metronome
+  // tick rather than the wood-block thunk a sample would give.
   scheduleNote(channel, instrument, note, when, gain = 1.0, duration = null, releaseTime = null) {
+    if (instrument === 'woodblock') return this.scheduleClick(channel, when, gain);
     const key = `${instrument}:${note}`;
     const buf = this.buffers.get(key);
     if (!buf) return null;
@@ -161,6 +166,33 @@ export class AudioEngine {
       noteGain.gain.linearRampToValueAtTime(0, stopAt);
       src.stop(stopAt + 0.01);
     }
+    return when;
+  }
+
+  // Synthesised metronome click: 35 ms noise burst with cubic decay
+  // shape, bandpassed at ~2.4 kHz to give a focused tick character.
+  // Routes through the same per-voice channel as everything else, so
+  // distance attenuation and panning still apply to the click track.
+  scheduleClick(channel, when, gain = 1.0) {
+    const dur = 0.035;
+    const sr = this.ctx.sampleRate;
+    const buf = this.ctx.createBuffer(1, Math.max(1, Math.ceil(sr * dur)), sr);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / data.length;
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.5);
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 2400;
+    filter.Q.value = 6;
+    const env = this.ctx.createGain();
+    // Bandpass throws away most of the noise's energy, so boost back up.
+    env.gain.value = gain * 1.8;
+    src.connect(filter).connect(env).connect(channel.channelGain);
+    src.start(when);
     return when;
   }
 

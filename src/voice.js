@@ -41,7 +41,8 @@ export class Voice {
     this.notes = part.notes;
 
     this.muted = false;
-    this.userVolume = ROLE_GAIN[this.role] ?? 1.0;
+    this.defaultVolume = ROLE_GAIN[this.role] ?? 1.0;
+    this.userVolume = this.defaultVolume;
     this.scheduledIdx = 0;
 
     // Stage position — set by main.js once layout is computed. Phase 5
@@ -101,12 +102,11 @@ export class Voice {
   }
 
   // Pre-load every sample this part will need so playback never stalls
-  // mid-piece on a network round-trip.
+  // mid-piece on a network round-trip. The click voice plays a
+  // synthesised noise burst (see audio.scheduleClick) so it has nothing
+  // to fetch.
   async loadSamples() {
-    if (this.role === 'click') {
-      await this.audio.loadSample(this.instrument, 'click');
-      return;
-    }
+    if (this.role === 'click') return;
     const uniqueMidis = new Set(this.notes.map(n => n.midi));
     await Promise.all(
       [...uniqueMidis].map(midi => this.audio.loadSample(this.instrument, midiToFilename(midi)))

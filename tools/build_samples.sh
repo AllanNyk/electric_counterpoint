@@ -99,28 +99,43 @@ shift_to_mp3() {
 }
 
 # build_chromatic_bank
-#   $1 instrument_name  (output folder under DEST_ROOT)
-#   $2 src_low_midi     (source library's lowest sampled pitch)
-#   $3 src_high_midi    (source library's highest sampled pitch)
-#   $4 out_low_midi     (target chromatic range — lowest)
-#   $5 out_high_midi    (target chromatic range — highest)
-#   $6 base_url         (raw URL prefix to the source folder)
-#   $7 fname_prefix     (filename prefix before the pitch token, e.g. "twang_")
-#   $8 fname_suffix     (filename suffix after the pitch token, e.g. "_mf_rr1.wav")
-#   $9 cache_subdir     (where to cache source WAVs under tools/.cache/)
+#   $1  instrument_name  (output folder under DEST_ROOT)
+#   $2  src_low_midi     (lowest *sounding* MIDI in the source range)
+#   $3  src_high_midi    (highest *sounding* MIDI in the source range)
+#   $4  out_low_midi     (target chromatic range — lowest, sounding)
+#   $5  out_high_midi    (target chromatic range — highest, sounding)
+#   $6  base_url         (raw URL prefix to the source folder)
+#   $7  fname_prefix     (filename prefix before the pitch token, e.g. "twang_")
+#   $8  fname_suffix     (filename suffix after the pitch token, e.g. "_mf_rr1.wav")
+#   $9  cache_subdir     (where to cache source WAVs under tools/.cache/)
+#   $10 src_label_offset (semitones; default 0)
+#                        Some libraries label their source files at a
+#                        pitch one octave below what they actually sound
+#                        (or vice versa). For each iteration `m` (the
+#                        sounding MIDI we want), the filename token is
+#                        derived from `m + src_label_offset`. So:
+#                          0   — labels match sounding pitch (Karoryfer
+#                                black-and-green-guitars, black-and-blue
+#                                -basses)
+#                          -12 — file labelled "X" sounds at MIDI(X)+12
+#                                (Karoryfer shinyguitar — set this and
+#                                pass src_low/src_high in *sounding*
+#                                MIDI, the iteration will map each m back
+#                                to the source's own labelling)
 build_chromatic_bank() {
   local name="$1" src_low="$2" src_high="$3"
   local out_low="$4" out_high="$5"
   local base_url="$6" fname_prefix="$7" fname_suffix="$8" cache_subdir="$9"
+  local src_label_offset="${10:-0}"
   local out_dir="$DEST_ROOT/$name"
   mkdir -p "$out_dir"
 
-  echo "[$name] discovering source samples (MIDI $src_low..$src_high)..."
+  echo "[$name] discovering source samples (sounding MIDI $src_low..$src_high)..."
   local -a src_midis=()
   local -a src_files=()
   local m k fname
   for (( m=src_low; m<=src_high; m++ )); do
-    k=$(midi_to_karoryfer "$m")
+    k=$(midi_to_karoryfer "$((m + src_label_offset))")
     fname="${fname_prefix}${k}${fname_suffix}"
     if download "${base_url}/${fname}" "${cache_subdir}/${fname}"; then
       src_midis+=("$m")
@@ -190,16 +205,21 @@ build_chromatic_bank \
   "karoryfer-black-and-blue/Samples/darkblack/reg"
 
 # Karoryfer shinyguitar — archtop / acoustic-leaning electric. CC0,
-# master branch. Source has 17 sample points spanning Db2..C6 at minor-
-# third spacing under Samples/acoustic/. We iterate chromatically and
-# the build helper skips 404s, then pitch-shifts the nearest available
-# source up to fill chromatic. Filenames carry no prefix and use
-# `_vl1_rr1_1.wav` for the softest velocity, first round-robin.
+# master branch. Source has 17 sample points under Samples/acoustic/
+# spanning labels Db2..C6 at minor-third spacing.
+#
+# IMPORTANT: this library labels its files an octave BELOW the sounding
+# pitch (file `a3_vl1_rr1_1.wav` actually sounds at A4). black-and-
+# green-guitars labels match sounding; this library is offset. We pass
+# src_label_offset = -12 so the build maps each sounding-MIDI iteration
+# back to the source's own naming. Source range in *sounding* MIDI is
+# therefore Db3..C7 (49..96), shifted up from the file labels' 37..84.
 build_chromatic_bank \
-  "guitar_acoustic" 37 84 40 96 \
+  "guitar_acoustic" 49 96 40 96 \
   "https://raw.githubusercontent.com/sfzinstruments/karoryfer.shinyguitar/master/Samples/acoustic" \
   "" "_vl1_rr1_1.wav" \
-  "karoryfer-shinyguitar/Samples/acoustic"
+  "karoryfer-shinyguitar/Samples/acoustic" \
+  -12
 
 build_woodblock
 

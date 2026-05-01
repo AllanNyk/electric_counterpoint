@@ -151,6 +151,32 @@
     #top-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
     #top-bar button.playing { border-color: var(--accent); color: var(--accent); }
 
+    /* Slider controls in the top bar */
+    .tb-control {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .tb-control label {
+      font-size: 10px;
+      color: var(--dim);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .tb-control input[type="range"] {
+      width: 90px;
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+    .tb-value {
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+      margin-left: 4px;
+    }
+
     #stage-canvas {
       flex: 1 1 0;
       min-height: 0;
@@ -258,6 +284,32 @@
     <div id="top-bar">
       <span class="movement-title" id="movement-title-text">III. Fast</span>
       <button id="play-btn" disabled>▶ Play</button>
+
+      <div class="tb-control">
+        <label for="vol-slider">Vol</label>
+        <input type="range" id="vol-slider" min="0" max="1" step="0.01" autocomplete="off">
+      </div>
+      <div class="tb-control">
+        <label for="tempo-slider">Tempo<span class="tb-value" id="tempo-value">192</span></label>
+        <input type="range" id="tempo-slider" min="60" max="240" step="1" autocomplete="off">
+      </div>
+      <div class="tb-control">
+        <label for="reverb-slider">Reverb</label>
+        <input type="range" id="reverb-slider" min="0" max="1" step="0.01" autocomplete="off">
+      </div>
+      <div class="tb-control">
+        <label for="eq-bass-slider">Bass</label>
+        <input type="range" id="eq-bass-slider" min="-12" max="12" step="0.5" autocomplete="off">
+      </div>
+      <div class="tb-control">
+        <label for="eq-mid-slider">Mid</label>
+        <input type="range" id="eq-mid-slider" min="-12" max="12" step="0.5" autocomplete="off">
+      </div>
+      <div class="tb-control">
+        <label for="eq-treble-slider">Treble</label>
+        <input type="range" id="eq-treble-slider" min="-12" max="12" step="0.5" autocomplete="off">
+      </div>
+
       <span class="spacer"></span>
       <button id="back-btn">← Movements</button>
     </div>

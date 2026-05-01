@@ -40,6 +40,23 @@ const backBtn = document.getElementById('back-btn');
 const playBtn = document.getElementById('play-btn');
 const placeholderEl = document.getElementById('stage-placeholder');
 
+const volSlider     = document.getElementById('vol-slider');
+const tempoSlider   = document.getElementById('tempo-slider');
+const tempoValueEl  = document.getElementById('tempo-value');
+const reverbSlider  = document.getElementById('reverb-slider');
+const eqBassSlider  = document.getElementById('eq-bass-slider');
+const eqMidSlider   = document.getElementById('eq-mid-slider');
+const eqTrebleSlider= document.getElementById('eq-treble-slider');
+
+// Defaults — kept here in JS rather than relying on the slider's initial
+// value attribute because browsers cache form state across reloads.
+const DEFAULT_MASTER_VOL = 0.85;
+const DEFAULT_REVERB_WET = 0.5;
+const DEFAULT_EQ_DB = 0;
+
+let masterVolume = DEFAULT_MASTER_VOL;  // tracked so stop/play restore correctly
+let currentBPM = 120;                   // overwritten per-movement
+
 const audio = new AudioEngine();
 
 let activeMovement = null;
@@ -125,9 +142,68 @@ async function chooseMovement(id) {
   applyStageLayout();
   placeholderEl.style.display = 'none';
   startRenderLoop();
+  applyTopBarDefaults();
 
   setStatus(`ready — press ▶ Play to hear ${m.label}`);
   playBtn.disabled = false;
+}
+
+// Force the slider DOM values to our intended defaults and push them
+// into the audio engine. Tempo defaults to the movement's notated BPM
+// (♩=192 for III); other controls reset only on first movement-select
+// (volume/reverb/EQ persist across menu trips so a user who tuned the
+// mix doesn't lose it switching movements). Sliders carry
+// autocomplete="off" but Firefox in particular still caches values.
+function applyTopBarDefaults() {
+  if (!activeMovement) return;
+  currentBPM = activeMovement.notatedBPM;
+  tempoSlider.value = String(currentBPM);
+  tempoValueEl.textContent = String(currentBPM);
+
+  // Master controls only get reset on first init (when audio.masterGain
+  // is still at its constructor default). Subsequent movement-selects
+  // leave the user's chosen mix alone.
+  if (!topBarInitialized) {
+    volSlider.value     = String(DEFAULT_MASTER_VOL);
+    reverbSlider.value  = String(DEFAULT_REVERB_WET);
+    eqBassSlider.value  = String(DEFAULT_EQ_DB);
+    eqMidSlider.value   = String(DEFAULT_EQ_DB);
+    eqTrebleSlider.value= String(DEFAULT_EQ_DB);
+    masterVolume = DEFAULT_MASTER_VOL;
+    audio.setMasterGain(masterVolume);
+    audio.setReverbWet(DEFAULT_REVERB_WET);
+    audio.setEqBass(DEFAULT_EQ_DB);
+    audio.setEqMid(DEFAULT_EQ_DB);
+    audio.setEqTreble(DEFAULT_EQ_DB);
+    topBarInitialized = true;
+  } else {
+    // Re-push the user's chosen values into the new audio context state.
+    masterVolume = parseFloat(volSlider.value);
+    audio.setMasterGain(masterVolume);
+    audio.setReverbWet(parseFloat(reverbSlider.value));
+    audio.setEqBass(parseFloat(eqBassSlider.value));
+    audio.setEqMid(parseFloat(eqMidSlider.value));
+    audio.setEqTreble(parseFloat(eqTrebleSlider.value));
+  }
+}
+
+let topBarInitialized = false;
+
+// Tempo slider mid-piece change: pivot playbackStart so the current
+// score position stays put across the tempo change. Notes already
+// scheduled within the lookahead window play at the old timing; new
+// scheduleAhead calls pick up the new tempoFactor automatically.
+function setTempo(bpm) {
+  bpm = Math.max(60, Math.min(240, Math.round(bpm)));
+  if (isPlaying && audio.ctx) {
+    const oldFactor = ENCODED_BPM / currentBPM;
+    const newFactor = ENCODED_BPM / bpm;
+    const tNow = audio.currentTime;
+    const scorePos = (tNow - playbackStart) / oldFactor;
+    playbackStart = tNow - scorePos * newFactor;
+  }
+  currentBPM = bpm;
+  tempoValueEl.textContent = String(currentBPM);
 }
 
 function syncCanvasBitmap() {
@@ -356,7 +432,7 @@ function startPlayback() {
   // Restore master gain in case the previous stop faded it to 0.
   const g = audio.masterGain.gain;
   g.cancelScheduledValues(audio.currentTime);
-  g.setValueAtTime(0.85, audio.currentTime);
+  g.setValueAtTime(masterVolume, audio.currentTime);
   voices.forEach(v => v.reset());
   playbackStart = audio.currentTime + PLAYBACK_LEAD_IN;
   isPlaying = true;
@@ -389,7 +465,7 @@ function stopPlayback() {
 
 function schedulerTick() {
   if (!isPlaying) return;
-  const tempoFactor = ENCODED_BPM / activeMovement.notatedBPM;
+  const tempoFactor = ENCODED_BPM / currentBPM;
   const scheduleUntil = audio.currentTime + SCHEDULER_LOOKAHEAD;
   for (const voice of voices) {
     voice.scheduleAhead(playbackStart, scheduleUntil, tempoFactor);
@@ -574,6 +650,28 @@ tpNext.addEventListener('click', () => {
   refreshTouchPanel();
 });
 tpClose.addEventListener('click', closeTouchPanel);
+
+// ---- top-bar slider handlers ----
+
+volSlider.addEventListener('input', () => {
+  masterVolume = parseFloat(volSlider.value);
+  audio.setMasterGain(masterVolume);
+});
+tempoSlider.addEventListener('input', () => {
+  setTempo(parseInt(tempoSlider.value, 10));
+});
+reverbSlider.addEventListener('input', () => {
+  audio.setReverbWet(parseFloat(reverbSlider.value));
+});
+eqBassSlider.addEventListener('input', () => {
+  audio.setEqBass(parseFloat(eqBassSlider.value));
+});
+eqMidSlider.addEventListener('input', () => {
+  audio.setEqMid(parseFloat(eqMidSlider.value));
+});
+eqTrebleSlider.addEventListener('input', () => {
+  audio.setEqTreble(parseFloat(eqTrebleSlider.value));
+});
 
 // ---- render loop ----
 

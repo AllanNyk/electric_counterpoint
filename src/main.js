@@ -608,6 +608,10 @@ function drawStage() {
   drawBackArc();
   drawListener();
   drawVoices();
+  // Hover panel goes on top of the voices so it's never occluded.
+  // Suppressed during a drag (the user already knows what they grabbed
+  // and the panel would just clutter the gesture).
+  if (hoveredVoice && !dragTarget) drawHoverPanel(hoveredVoice);
   drawStatusLine();
 }
 
@@ -651,14 +655,19 @@ function drawListener() {
   ctx.stroke();
 }
 
+// roleIndex of each voice — built each frame in drawVoices so we can
+// reuse it in drawHoverPanel for the bar-fill color.
+const voiceRoleIndex = new Map();
+
 function drawVoices() {
   if (!voices.length) return;
-  // Build per-role index so voice colors get hue-shifted across guitars 1..7.
-  const roleIndex = new Map();
+  voiceRoleIndex.clear();
+  const counter = new Map();
   const tNow = audio.currentTime;
   for (const voice of voices) {
-    const idx = roleIndex.get(voice.role) ?? 0;
-    roleIndex.set(voice.role, idx + 1);
+    const idx = counter.get(voice.role) ?? 0;
+    counter.set(voice.role, idx + 1);
+    voiceRoleIndex.set(voice, idx);
     drawOneVoice(voice, idx, tNow);
   }
 }
@@ -717,6 +726,80 @@ function shortLabel(label) {
   const m = label.match(/^Guitar (\d+)$/);
   if (m) return `G${m[1]}`;
   return label;
+}
+
+// Mouse-only hover panel (touch users get the bottom #touch-panel
+// overlay instead). Drawn on the canvas next to the hovered voice
+// with: voice label, role + current instrument, a volume bar, and
+// shortcut hints. Mirrors the In C drawVoicePanel pattern but styled
+// to match EC's dark stage theme.
+function drawHoverPanel(voice) {
+  if (!layout) return;
+  const swappable = isSwappable(voice.role);
+  const lines = swappable
+    ? ['scroll · volume', 'M · mute', '← → · swap instrument', 'drag · move']
+    : ['scroll · volume', 'M · mute', 'drag · move'];
+  const w = 196;
+  const h = 64 + lines.length * 14;
+  const r = voiceRadius(voice.part);
+  const onLeft = voice.x < layout.canvasWidth / 2;
+  let sx = onLeft ? voice.x + r + 14 : voice.x - r - 14 - w;
+  let sy = voice.y - h / 2;
+  // Clamp inside canvas with a small margin.
+  sx = Math.max(8, Math.min(layout.canvasWidth - w - 8, sx));
+  sy = Math.max(8, Math.min(layout.canvasHeight - h - 8, sy));
+
+  ctx.fillStyle = 'rgba(24, 24, 32, 0.95)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(sx, sy, w, h, 4);
+  } else {
+    ctx.rect(sx, sy, w, h);
+  }
+  ctx.fill();
+  ctx.stroke();
+
+  // Header — voice label.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.font = '13px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(voice.label, sx + 12, sy + 10);
+
+  // Sub — role + instrument name.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.font = '11px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+  const sub = swappable
+    ? `${voice.role} · ${instrumentLabel(voice.instrument)}`
+    : voice.role;
+  ctx.fillText(sub, sx + 12, sy + 26);
+
+  // Volume bar — the bar maxes at the slider's 1.5 ceiling so a default
+  // setVolume(0.9) reads as 60%, matching the touch panel.
+  const barX = sx + 12, barY = sy + 46, barW = w - 24, barH = 5;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.fillRect(barX, barY, barW, barH);
+  const fillFrac = Math.max(0, Math.min(1, voice.userVolume / 1.5));
+  ctx.fillStyle = voice.muted
+    ? 'rgba(255, 255, 255, 0.25)'
+    : voiceColor(voice.part, voiceRoleIndex.get(voice) ?? 0);
+  ctx.fillRect(barX, barY, barW * fillFrac, barH);
+  if (voice.muted) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.font = '10px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('muted', barX + barW, sy + 32);
+    ctx.textAlign = 'left';
+  }
+
+  // Hints.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.font = '10px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], sx + 12, sy + 60 + i * 14);
+  }
 }
 
 function drawStatusLine() {

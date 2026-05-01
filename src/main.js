@@ -54,6 +54,13 @@ const curtainMovement = document.getElementById('curtain-movement');
 const curtainRestart  = document.getElementById('curtain-restart');
 const curtainMenu     = document.getElementById('curtain-menu');
 
+const helpBtn   = document.getElementById('help-btn');
+const helpModal = document.getElementById('help-modal');
+const helpClose = document.getElementById('help-close');
+const aboutBtn   = document.getElementById('about-btn');
+const aboutModal = document.getElementById('about-modal');
+const aboutClose = document.getElementById('about-close');
+
 // Defaults — kept here in JS rather than relying on the slider's initial
 // value attribute because browsers cache form state across reloads.
 const DEFAULT_MASTER_VOL = 0.85;
@@ -582,9 +589,10 @@ window.addEventListener('keydown', (e) => {
       hoveredVoice.changeInstrument(next);
       syncTouchPanelIfShowing(hoveredVoice);
     }
-  } else if (e.key === 'Escape') {
-    if (touchPanelVoice) closeTouchPanel();
   }
+  // Escape and `?` are handled by the consolidated overlay handler
+  // further down so a single Esc press always picks the right thing
+  // to dismiss.
 });
 
 // ---- touch panel ----
@@ -755,10 +763,52 @@ curtainMenu.addEventListener('click', () => {
   // returnToMenu hides the curtain itself.
   returnToMenu();
 });
+
+// ---- help / about modals ----
+
+function openModal(el) {
+  // Closing any other modal first keeps state simple.
+  closeAllModals();
+  el.hidden = false;
+}
+function closeAllModals() {
+  helpModal.hidden = true;
+  aboutModal.hidden = true;
+}
+function anyModalOpen() {
+  return !helpModal.hidden || !aboutModal.hidden;
+}
+
+helpBtn.addEventListener('click', () => openModal(helpModal));
+helpClose.addEventListener('click', closeAllModals);
+helpModal.addEventListener('click', (e) => { if (e.target === helpModal) closeAllModals(); });
+
+aboutBtn.addEventListener('click', () => openModal(aboutModal));
+aboutClose.addEventListener('click', closeAllModals);
+aboutModal.addEventListener('click', (e) => { if (e.target === aboutModal) closeAllModals(); });
+
+// ---- consolidated Esc / `?` handler ----
+//
+// Priority on Escape: open modal → curtain → touch panel → nothing.
+// `?` toggles the help modal (when no other modal is in the way).
+
 window.addEventListener('keydown', (e) => {
-  if (!curtainEl.hidden && e.key === 'Escape') {
+  if (e.key === '?') {
+    e.preventDefault();
+    if (helpModal.hidden) openModal(helpModal);
+    else closeAllModals();
+    return;
+  }
+  if (e.key !== 'Escape') return;
+  if (anyModalOpen()) {
+    e.preventDefault();
+    closeAllModals();
+  } else if (!curtainEl.hidden) {
     e.preventDefault();
     returnToMenu();
+  } else if (touchPanelVoice) {
+    e.preventDefault();
+    closeTouchPanel();
   }
 });
 
@@ -799,6 +849,7 @@ function drawStage() {
   // Suppressed during a drag (the user already knows what they grabbed
   // and the panel would just clutter the gesture).
   if (hoveredVoice && !dragTarget) drawHoverPanel(hoveredVoice);
+  drawHint();
   drawStatusLine();
 }
 
@@ -996,4 +1047,49 @@ function drawStatusLine() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(statusLine, 16, layout.canvasHeight - 24);
+}
+
+// ---- onboarding hints ----
+//
+// During the first ~30 s of the user's first playback in this session,
+// fade transient hints across the bottom of the canvas to walk through
+// the core interactions. Hint times are in *score seconds* from
+// playback start; tempo changes don't affect hint timing because we
+// read straight from audio.currentTime - playbackStart.
+
+const HINTS = [
+  { at: 3,  duration: 8, text: 'drag any voice or the listener to move it around the stage' },
+  { at: 13, duration: 8, text: 'tap or hover a voice for volume, mute, instrument swap' },
+  { at: 24, duration: 8, text: 'press ? for the full controls reference' },
+];
+let hintsCompleted = false;
+
+function activeHint() {
+  if (hintsCompleted || !isPlaying || !playbackStart) return null;
+  const t = audio.currentTime - playbackStart;
+  const lastEnd = HINTS[HINTS.length - 1].at + HINTS[HINTS.length - 1].duration;
+  if (t > lastEnd) {
+    hintsCompleted = true;
+    return null;
+  }
+  for (const h of HINTS) {
+    if (t >= h.at && t < h.at + h.duration) {
+      return { ...h, elapsed: t - h.at };
+    }
+  }
+  return null;
+}
+
+function drawHint() {
+  const h = activeHint();
+  if (!h) return;
+  // Fade in over 0.5 s, fade out over the last 0.8 s.
+  let alpha = 1;
+  if (h.elapsed < 0.5) alpha = h.elapsed / 0.5;
+  else if (h.elapsed > h.duration - 0.8) alpha = Math.max(0, (h.duration - h.elapsed) / 0.8);
+  ctx.fillStyle = `rgba(230, 230, 235, ${alpha * 0.85})`;
+  ctx.font = '14px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(h.text, layout.canvasWidth / 2, layout.canvasHeight - 18);
 }

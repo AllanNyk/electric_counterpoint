@@ -324,6 +324,82 @@
       letter-spacing: 0.04em;
     }
     .curtain-buttons button:hover { border-color: var(--accent); }
+
+    /* Modals (Help + About) */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9;
+      padding: 24px;
+    }
+    .modal[hidden] { display: none; }
+    .modal-content {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      max-width: 560px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-weight: 400;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+    }
+    .modal-header button {
+      background: transparent;
+      border: none;
+      color: var(--fg);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px 8px;
+    }
+    .modal-header button:hover { color: var(--accent); }
+    .modal-body {
+      padding: 16px 20px 20px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .modal-body h3 {
+      margin: 16px 0 6px;
+      font-size: 11px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 500;
+    }
+    .modal-body h3:first-child { margin-top: 0; }
+    .modal-body ul { margin: 0; padding-left: 20px; }
+    .modal-body li { margin: 3px 0; }
+    .modal-body kbd {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+      min-width: 12px;
+      text-align: center;
+    }
+    .modal-body a { color: var(--accent); text-decoration: none; }
+    .modal-body a:hover { text-decoration: underline; }
+    .modal-body p { margin: 8px 0; }
   </style>
 </head>
 <body>
@@ -378,11 +454,69 @@
       </div>
 
       <span class="spacer"></span>
+      <button id="about-btn" type="button">About</button>
+      <button id="help-btn" type="button" title="Show controls (?)">?</button>
       <button id="reset-btn" type="button">Reset</button>
       <button id="back-btn">← Movements</button>
     </div>
     <canvas id="stage-canvas"></canvas>
     <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+  </div>
+
+  <!-- Help modal — full controls reference. -->
+  <div id="help-modal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Controls</h2>
+        <button id="help-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <h3>Stage</h3>
+        <ul>
+          <li><kbd>Drag</kbd> any voice or the listener dot to move it</li>
+          <li><kbd>Hover</kbd> a voice (mouse) — control panel appears next to it</li>
+          <li><kbd>Tap</kbd> a voice (touch) — bottom panel slides in with the same controls</li>
+        </ul>
+        <h3>Per-voice (when hovered, mouse)</h3>
+        <ul>
+          <li><kbd>Scroll</kbd> wheel — volume up / down</li>
+          <li><kbd>M</kbd> — mute / unmute</li>
+          <li><kbd>←</kbd> <kbd>→</kbd> — swap instrument (live + numbered guitars only)</li>
+        </ul>
+        <h3>Top bar</h3>
+        <ul>
+          <li>Master volume / tempo / reverb wet / 3-band EQ — all live, change while playing</li>
+          <li><kbd>Reset</kbd> — restore default sliders, voice positions, volumes, and instruments</li>
+        </ul>
+        <h3>Other</h3>
+        <ul>
+          <li><kbd>?</kbd> — open / close this help</li>
+          <li><kbd>Esc</kbd> — close any open overlay or return to the menu</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- About modal — credits. -->
+  <div id="about-modal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>About</h2>
+        <button id="about-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Electric Counterpoint</strong> by Steve Reich (1987). Interactive realisation by Allan Sjølin.</p>
+        <h3>Credits</h3>
+        <ul>
+          <li>Score: <em>Electric Counterpoint</em>, Hendon Music / Boosey &amp; Hawkes — © Steve Reich. This page is an interactive realisation; it does not redistribute the score.</li>
+          <li>Clean / acoustic guitar samples: <a href="https://github.com/sfzinstruments/karoryfer.black-and-green-guitars" target="_blank" rel="noopener">karoryfer black-and-green-guitars</a> &amp; <a href="https://github.com/sfzinstruments/karoryfer.shinyguitar" target="_blank" rel="noopener">karoryfer shinyguitar</a> (CC0)</li>
+          <li>Bass guitar samples: <a href="https://github.com/sfzinstruments/karoryfer.black-and-blue-basses" target="_blank" rel="noopener">karoryfer black-and-blue-basses</a> (CC0)</li>
+          <li>Wood block: <a href="https://github.com/sgossner/VCSL" target="_blank" rel="noopener">Versilian Community Sample Library</a> (CC0)</li>
+          <li>Reverb impulse: <a href="https://www.openair.hosted.york.ac.uk/" target="_blank" rel="noopener">Theatre@41</a>, openairlib.net (CC-BY, University of York)</li>
+        </ul>
+        <p>Sister project to my <a href="https://allansjoelin.com/in_c/" target="_blank" rel="noopener">In C</a> realisation. Source on <a href="https://github.com/AllanNyk/electric_counterpoint" target="_blank" rel="noopener">GitHub</a>.</p>
+      </div>
+    </div>
   </div>
 
   <!-- Endgame curtain — fades in when the score finishes naturally. -->

@@ -271,4 +271,3 @@ implicitly. Touch parity through a Spotlight button in the voice panel.
 
 - **OG preview image.** Render a wide stage screenshot (1200 × 630)
   for richer link previews on social.
-- **Spacebar = Play / Stop** as a global keyboard shortcut.

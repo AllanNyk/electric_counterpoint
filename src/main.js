@@ -731,6 +731,18 @@ window.addEventListener('keydown', (e) => {
   const tag = e.target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
+  if (e.key === ' ' || e.code === 'Space') {
+    // Global play / stop. Skip when a modal or the curtain is up so
+    // their own buttons can still receive Space (e.g. Start over on
+    // the curtain).
+    if (anyModalOpen() || !curtainEl.hidden) return;
+    if (playBtn.disabled) return;
+    e.preventDefault();
+    if (isPlaying) stopPlayback();
+    else startPlayback();
+    return;
+  }
+
   if (e.key === 'm' || e.key === 'M') {
     if (hoveredVoice) {
       e.preventDefault();

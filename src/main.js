@@ -33,6 +33,13 @@ const SCHEDULER_LOOKAHEAD = 0.5;     // seconds of audio scheduled ahead of curr
 const SCHEDULER_TICK_MS = 100;        // how often the scheduler wakes
 const PLAYBACK_LEAD_IN = 0.3;         // seconds between Play click and t=0
 
+// ---- score scrubber ----
+const SCRUBBER_Y = 14;                // baseline y for the track
+const SCRUBBER_TRACK_H = 4;           // visible track thickness
+const SCRUBBER_HIT_PAD = 12;          // ± padding around the track for taps
+const SCRUBBER_GUTTER = 16;           // x-margin from canvas edges
+const SCRUBBER_TIME_W = 96;           // reserved width for the "M:SS / M:SS" label
+
 const movementSelectEl = document.getElementById('movement-select');
 const stageViewEl = document.getElementById('stage-view');
 const movementTitleEl = document.getElementById('movement-title-text');
@@ -69,6 +76,7 @@ const DEFAULT_EQ_DB = 0;
 
 let masterVolume = DEFAULT_MASTER_VOL;  // tracked so stop/play restore correctly
 let currentBPM = 120;                   // overwritten per-movement
+let pendingScoreStart = 0;              // where the next Play picks up from (set by scrubber while paused)
 
 const audio = new AudioEngine();
 
@@ -320,6 +328,29 @@ function onPointerDown(e) {
   if (audio.ctx?.state === 'suspended') audio.ctx.resume();
   if (!layout) return;
   const { x, y } = pointerCoords(e);
+
+  // Scrubber takes priority — it sits along the top edge above
+  // everything else.
+  if (scrubberHit(x, y)) {
+    e.preventDefault();
+    if (canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+    }
+    dragTarget = 'scrubber';
+    dragStart = { x, y, pointerType: e.pointerType, moved: false };
+    canvas.style.cursor = 'grabbing';
+    // While playing, hold silence for the full drag — restored on up.
+    if (isPlaying && audio.ctx) {
+      const g = audio.masterGain.gain;
+      const tNow = audio.currentTime;
+      g.cancelScheduledValues(tNow);
+      g.setValueAtTime(g.value, tNow);
+      g.linearRampToValueAtTime(0, tNow + 0.04);
+    }
+    seekTo(scrubberSecondsAt(x), { keepSilent: true });
+    return;
+  }
+
   const target = hitTest(x, y);
   if (!target) {
     // Tap on empty space (touch only) closes the touch panel.
@@ -348,6 +379,10 @@ function onPointerMove(e) {
   if (dragStart && Math.hypot(x - dragStart.x, y - dragStart.y) > TAP_SLOP_PX) {
     dragStart.moved = true;
   }
+  if (dragTarget === 'scrubber') {
+    seekTo(scrubberSecondsAt(x), { keepSilent: true });
+    return;
+  }
   const clamped = clampToStage(x + dragOffsetX, y + dragOffsetY, layout);
   if (dragTarget === 'listener') {
     listenerPos = { x: clamped.x, y: clamped.y };
@@ -367,9 +402,19 @@ function onPointerUp(e) {
     !dragStart.moved &&
     dragStart.pointerType === 'touch' &&
     dragTarget &&
-    dragTarget !== 'listener'
+    dragTarget !== 'listener' &&
+    dragTarget !== 'scrubber'
   ) {
     openTouchPanel(dragTarget);
+  }
+  // End-of-scrub: restore master gain. seekTo already reseated
+  // playbackStart and re-filled the lookahead during the drag.
+  if (dragTarget === 'scrubber' && isPlaying && audio.ctx) {
+    const g = audio.masterGain.gain;
+    const tNow = audio.currentTime;
+    g.cancelScheduledValues(tNow);
+    g.setValueAtTime(0, tNow);
+    g.linearRampToValueAtTime(masterVolume, tNow + 0.12);
   }
   dragTarget = null;
   dragStart = null;
@@ -446,13 +491,39 @@ function startPlayback() {
   const g = audio.masterGain.gain;
   g.cancelScheduledValues(audio.currentTime);
   g.setValueAtTime(masterVolume, audio.currentTime);
-  voices.forEach(v => v.reset());
-  playbackStart = audio.currentTime + PLAYBACK_LEAD_IN;
+  // Skip each voice's cursor past pendingScoreStart so playback picks
+  // up wherever the scrubber was last left.
+  const startSec = Math.max(0, Math.min(activeScore.duration, pendingScoreStart));
+  voices.forEach(v => {
+    v.reset();
+    advanceVoiceTo(v, startSec);
+  });
+  const tempoFactor = ENCODED_BPM / currentBPM;
+  playbackStart = audio.currentTime + PLAYBACK_LEAD_IN - startSec * tempoFactor;
   isPlaying = true;
   playBtn.textContent = '■ Stop';
   playBtn.classList.add('playing');
   setStatus(`playing ${activeMovement.label} @ ♩=${activeMovement.notatedBPM}`);
   schedulerTick();
+}
+
+// Move a voice's scheduling cursor past every note that ends before
+// `scoreSeconds`. Anything that's still partly in the future from that
+// point is left to scheduleAhead.
+function advanceVoiceTo(voice, scoreSeconds) {
+  let i = 0;
+  while (i < voice.notes.length && voice.notes[i].time < scoreSeconds) i++;
+  voice.scheduledIdx = i;
+  voice.recentOnsets = [];
+}
+
+// Where are we in the score right now? Used by the scrubber drawing.
+function currentScoreSeconds() {
+  if (isPlaying && audio.ctx) {
+    const tempoFactor = ENCODED_BPM / currentBPM;
+    return Math.max(0, (audio.currentTime - playbackStart) / tempoFactor);
+  }
+  return pendingScoreStart;
 }
 
 function stopPlayback() {
@@ -491,6 +562,8 @@ function schedulerTick() {
       isPlaying = false;
       playBtn.textContent = '▶ Play';
       playBtn.classList.remove('playing');
+      // Rewind so "Start over" on the curtain plays from the top.
+      pendingScoreStart = 0;
       setStatus(`finished.`);
       showCurtain();
       return;
@@ -504,6 +577,7 @@ function returnToMenu() {
   stopRenderLoop();
   closeTouchPanel();
   hideCurtain();
+  pendingScoreStart = 0;
   stageViewEl.classList.remove('active');
   movementSelectEl.style.display = 'flex';
   requestAnimationFrame(() => movementSelectEl.classList.remove('fading'));
@@ -550,6 +624,11 @@ canvas.addEventListener('pointermove', (e) => {
   if (dragTarget) return; // already grabbing
   if (!layout) return;
   const { x, y } = pointerCoords(e);
+  if (scrubberHit(x, y)) {
+    hoveredVoice = null;
+    canvas.style.cursor = 'pointer';
+    return;
+  }
   const target = hitTest(x, y);
   hoveredVoice = (target && target !== 'listener') ? target : null;
   canvas.style.cursor = target ? 'grab' : '';
@@ -725,6 +804,10 @@ function resetAll() {
   // its newly-reset position.
   applyStageLayout();
 
+  // Rewind to the start of the piece. While playing this seeks live;
+  // while paused it just resets the "next play" position.
+  seekTo(0);
+
   // Sync any visible touch panel with the new state.
   if (touchPanelVoice) refreshTouchPanel();
 }
@@ -849,8 +932,111 @@ function drawStage() {
   // Suppressed during a drag (the user already knows what they grabbed
   // and the panel would just clutter the gesture).
   if (hoveredVoice && !dragTarget) drawHoverPanel(hoveredVoice);
+  drawScrubber();
   drawHint();
   drawStatusLine();
+}
+
+// Score scrubber drawn at the top of the canvas: full-width track,
+// accent-coloured fill up to the playhead, small playhead marker, and
+// "M:SS / M:SS" elapsed/total to the right.
+function drawScrubber() {
+  if (!activeScore || !activeScore.duration) return;
+  const W = layout.canvasWidth;
+  const trackX = SCRUBBER_GUTTER;
+  const trackY = SCRUBBER_Y;
+  const trackW = W - SCRUBBER_GUTTER * 2 - SCRUBBER_TIME_W;
+  const trackH = SCRUBBER_TRACK_H;
+
+  const sec = currentScoreSeconds();
+  const frac = Math.max(0, Math.min(1, sec / activeScore.duration));
+  const headX = trackX + trackW * frac;
+
+  // Track background.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(trackX, trackY, trackW, trackH);
+
+  // Filled portion.
+  ctx.fillStyle = dragTarget === 'scrubber'
+    ? 'rgba(217, 107, 58, 0.85)'        // accent, brighter while dragging
+    : 'rgba(217, 107, 58, 0.65)';
+  ctx.fillRect(trackX, trackY, trackW * frac, trackH);
+
+  // Playhead marker — a small vertical bar.
+  ctx.fillStyle = '#f3f3f5';
+  ctx.fillRect(headX - 1, trackY - 4, 2, trackH + 8);
+
+  // Time label — wall-clock seconds at the current tempo, not score-
+  // seconds at the encoded ♩=120 (a user listening at 192 BPM should
+  // see ~4:22 for mvt III, not the 7:00 the score is encoded at).
+  const tempoFactor = ENCODED_BPM / currentBPM;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = '11px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `${formatTime(sec * tempoFactor)} / ${formatTime(activeScore.duration * tempoFactor)}`,
+    W - SCRUBBER_GUTTER,
+    trackY + trackH / 2
+  );
+}
+
+function formatTime(seconds) {
+  if (!isFinite(seconds) || seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function scrubberHit(x, y) {
+  if (!layout || !activeScore) return false;
+  const trackX = SCRUBBER_GUTTER;
+  const trackW = layout.canvasWidth - SCRUBBER_GUTTER * 2 - SCRUBBER_TIME_W;
+  return x >= trackX
+      && x <= trackX + trackW
+      && y >= SCRUBBER_Y - SCRUBBER_HIT_PAD
+      && y <= SCRUBBER_Y + SCRUBBER_TRACK_H + SCRUBBER_HIT_PAD;
+}
+
+function scrubberSecondsAt(x) {
+  const trackX = SCRUBBER_GUTTER;
+  const trackW = layout.canvasWidth - SCRUBBER_GUTTER * 2 - SCRUBBER_TIME_W;
+  const frac = Math.max(0, Math.min(1, (x - trackX) / trackW));
+  return frac * activeScore.duration;
+}
+
+// Jump playback to a score-time position. While playing this dips
+// masterGain to silence (so notes already in the lookahead window
+// don't ring through the seek), reseats playbackStart, advances every
+// voice's scheduledIdx, and triggers an immediate scheduler tick so
+// the new lookahead window fills before the gain restores.
+//
+// `keepSilent` is set during scrubber drag so we hold silence through
+// the whole drag and only restore on release.
+function seekTo(scoreSeconds, { keepSilent = false } = {}) {
+  scoreSeconds = Math.max(0, Math.min(activeScore.duration, scoreSeconds));
+  pendingScoreStart = scoreSeconds;
+  if (!isPlaying || !audio.ctx) return;
+
+  const tempoFactor = ENCODED_BPM / currentBPM;
+  const tNow = audio.currentTime;
+  playbackStart = tNow - scoreSeconds * tempoFactor;
+  for (const v of voices) advanceVoiceTo(v, scoreSeconds);
+
+  // Re-fill the lookahead at the new position right now.
+  if (schedulerHandle) clearTimeout(schedulerHandle);
+  schedulerTick();
+
+  if (!keepSilent) {
+    // Quick dip+restore so the old lookahead's tail doesn't bleed
+    // through. Total ducking ~120 ms.
+    const g = audio.masterGain.gain;
+    g.cancelScheduledValues(tNow);
+    g.setValueAtTime(g.value, tNow);
+    g.linearRampToValueAtTime(0, tNow + 0.04);
+    g.setValueAtTime(0, tNow + 0.10);
+    g.linearRampToValueAtTime(masterVolume, tNow + 0.20);
+  }
 }
 
 function drawStageFloor() {

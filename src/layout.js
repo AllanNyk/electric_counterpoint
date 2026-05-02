@@ -65,10 +65,12 @@ export function initialVoicePositions(parts, layout) {
 
   // Click: back-left of stage, off-center so it doesn't overlap G5 (the
   // arc's top-center voice). Suggests a percussionist position upstage.
+  // The y-floor (STAGE_PADDING) is set high enough to clear the score
+  // scrubber that sits at the very top of the canvas.
   for (const p of clickParts) {
     positions.set(p.id, {
       x: cx - arcRadius * 0.40,
-      y: Math.max(STAGE_PADDING * 0.5, listenerY - arcRadius * 1.18),
+      y: Math.max(STAGE_PADDING, listenerY - arcRadius * 1.18),
     });
   }
 

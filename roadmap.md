@@ -181,30 +181,84 @@ deprecated) and `-v` on sftp to debug a 255-exit auth issue.
 
 ---
 
+## Phase 12 — Score scrubber ✓
+
+Thin track at the top of the canvas with a draggable playhead.
+Click to jump, drag to scrub (master gain dips silently during drag,
+restores on release). Works while paused too — sets the position next
+Play picks up from. Time label shows wall-clock seconds at the current
+tempo, not score-encoded seconds.
+
+---
+
 ## Beyond core (future)
 
-- **Movements I & II.** Author the MusicXMLs (live + 12 guitars + 2
-  bass + click each) and flip `available: true` in `movements.js`.
-  Verify the half-moon layout handles 12 numbered guitars; current
-  geometry should scale but spacing wants confirming.
-- **Visualization deepening.** Selectively port from `in_c`: rhythm
-  rings on note onsets, polyrhythmic sparkles between out-of-phase
-  voices, unison-strand brightening when canon converges. Held back so
-  the meditative legibility of the stage stays intact; revisit after
-  movements I & II are in.
+### Maximum leverage from the existing engine
+
+- **Vermont Counterpoint** (1982, flutes) and **New York Counterpoint**
+  (1985, clarinets) are structurally identical to Electric Counterpoint
+  — live soloist + N prerecorded same-instrument tracks. Same engine,
+  swap the sample banks and the part-mapping. A "Reich's Counterpoints"
+  trilogy would emerge with one codebase.
+- **Movements I & II of Electric Counterpoint.** Author the MusicXMLs
+  (live + 12 guitars + 2 bass + click each) and flip `available: true`
+  in `movements.js`. Verify the half-moon layout handles 12 numbered
+  guitars — current geometry should scale, spacing wants confirming.
+- **Audio recording / WAV export.** Capture the spatial mix the user
+  conducts as a downloadable WAV via `MediaStreamDestination` +
+  `MediaRecorder`. People could share their mix, not just the link.
+
+### Novel interactions
+
+- **Spotlight a voice.** Double-click brings one voice to the front
+  and dims the others — handy for hearing what each canon line is
+  actually doing.
+- **Auto-tour mode.** Listener drifts on its own (path or random walk,
+  speed slider) — turns the conductor app into a passive listening
+  installation.
+- **Stage state in URL.** Encode listener + voice positions + tempo
+  into a `?…` query string so a specific configuration is shareable.
+  Reload the link, hear exactly the same mix.
+- **WebXR / 3D stage.** Put the user inside the half-moon with head
+  tracking. The spatial-audio model already does most of the work;
+  binaural HRTF panning instead of StereoPanner would be the new
+  piece. Significant lift but the engine is set up for it.
+
+### Educational layer
+
+- **Phase indicator.** Reich's whole technique is canon-by-shifting.
+  Visualise *which* beat each voice is on (a tiny dot rotating around
+  each circle, like In C's rhythm rings but tighter). Watching them
+  drift apart is half the appeal of the piece.
+- **Section markers on the scrubber.** Reich's score has labelled
+  sections / rehearsal letters; markers on the scrubber would let the
+  user jump straight to specific passages.
+
+### Visualization deepening
+
+- **Selective ports from `in_c`.** Polyrhythmic sparkles between out-
+  of-phase voices, unison-strand brightening when canon converges,
+  voice rhythm rings around each circle. Held back so the meditative
+  legibility of the stage stays intact; revisit after the catalog
+  expands.
+
+### Catalog / sample additions
+
 - **Marimba / vibraphone palette.** Reich's piece has authorised
-  arrangements for marimbas and similar mallet ensembles. Add a
-  non-guitar palette as an additional swap option.
-- **Nylon / classical guitar in the swap palette.** No CC0 nylon source
-  on GitHub; Iowa MIS Classical Guitar (public domain) is the most
-  likely candidate, but it'd need a manual download step in
-  build_samples.sh.
+  arrangements for marimbas and similar mallet ensembles. Adds a
+  non-guitar palette as an extra swap option.
+- **Nylon / classical guitar.** No CC0 nylon source on GitHub; Iowa
+  MIS Classical Guitar (public domain) is the most likely candidate
+  but would need a manual download step in `build_samples.sh`.
+
+### Cross-project
+
+- **Landing page** combining In C + Electric Counterpoint (+ future
+  Reich pieces) under `allansjoelin.com/` as a small "interactive
+  scores" gallery.
+
+### Polish / metadata
+
 - **OG preview image.** Render a wide stage screenshot (1200 × 630)
   for richer link previews on social.
-- **Audio recording / WAV export.** Capture the spatial mix as audio
-  using `MediaStreamDestination` + `MediaRecorder`, downloadable.
-- **Stage rotation / binaural.** Rotate the listener's facing
-  direction (currently fixed pointing forward). Would need HRTF-style
-  binaural rather than simple StereoPanner pan.
-- **Wider tempo / piece-end controls.** Optional looping, scrub bar,
-  jump-to-marker for working with specific sections of the piece.
+- **Spacebar = Play / Stop** as a global keyboard shortcut.

@@ -43,6 +43,9 @@ export class Voice {
     this.muted = false;
     this.defaultVolume = ROLE_GAIN[this.role] ?? 1.0;
     this.userVolume = this.defaultVolume;
+    // Multiplier applied while another voice is spotlit (1.0 = no spotlight
+    // active or this voice is the spotlit one). Set via setSpotlightAttenuation.
+    this.spotlightAttenuation = 1.0;
     this.scheduledIdx = 0;
 
     // Stage position — set by main.js once layout is computed. Phase 5
@@ -64,7 +67,8 @@ export class Voice {
   }
 
   effectiveGain() {
-    return this.muted ? 0 : this.userVolume;
+    if (this.muted) return 0;
+    return this.userVolume * this.spotlightAttenuation;
   }
 
   setMuted(muted) {
@@ -80,8 +84,25 @@ export class Voice {
   setVolume(v) {
     this.userVolume = Math.max(0, Math.min(1.5, v));
     if (!this.muted) {
-      this.channel.channelGain.gain.value = this.effectiveGain();
+      const g = this.channel.channelGain.gain;
+      const ctx = this.audio.ctx;
+      // Cancel any in-flight ramp (e.g. spotlight fade) so the new value
+      // sticks rather than getting overwritten when the ramp continues.
+      g.cancelScheduledValues(ctx.currentTime);
+      g.setValueAtTime(this.effectiveGain(), ctx.currentTime);
     }
+  }
+
+  // Smoothly ramp channelGain to effectiveGain() at the new attenuation.
+  // 0.25 s feels like a natural "duck" — long enough to be musical, short
+  // enough that switching spotlight between voices stays responsive.
+  setSpotlightAttenuation(target) {
+    this.spotlightAttenuation = Math.max(0, Math.min(1, target));
+    const g = this.channel.channelGain.gain;
+    const ctx = this.audio.ctx;
+    g.cancelScheduledValues(ctx.currentTime);
+    g.setValueAtTime(g.value, ctx.currentTime);
+    g.linearRampToValueAtTime(this.effectiveGain(), ctx.currentTime + 0.25);
   }
 
   // Switch to a new instrument bank. Currently-playing notes finish on

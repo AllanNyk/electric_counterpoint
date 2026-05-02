@@ -259,6 +259,7 @@
     }
     .tp-row button:hover:not(:disabled) { border-color: var(--accent); }
     #tp-mute.muted { color: var(--accent); border-color: var(--accent); }
+    #tp-spotlight.active { color: var(--accent); border-color: var(--accent); }
     .tp-instrument-label {
       color: var(--dim);
       font-size: 13px;
@@ -492,6 +493,11 @@
           <li><kbd>M</kbd> — mute / unmute</li>
           <li><kbd>←</kbd> <kbd>→</kbd> — swap instrument (live + numbered guitars only)</li>
         </ul>
+        <h3>Spotlight</h3>
+        <ul>
+          <li><kbd>Double-click</kbd> a voice — bring it to the front, dim the others (touch: use Spotlight in voice panel)</li>
+          <li><kbd>Double-click</kbd> empty stage (or <kbd>Esc</kbd>) — exit spotlight</li>
+        </ul>
         <h3>Top bar</h3>
         <ul>
           <li>Master volume / tempo / reverb wet / 3-band EQ — all live, change while playing</li>
@@ -554,6 +560,7 @@
     </div>
     <div class="tp-row">
       <button id="tp-mute" type="button">Mute</button>
+      <button id="tp-spotlight" type="button">Spotlight</button>
     </div>
     <div class="tp-row tp-swap-row" id="tp-swap-row">
       <button id="tp-prev" type="button">← Prev</button>

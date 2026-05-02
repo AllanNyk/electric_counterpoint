@@ -40,6 +40,11 @@ const SCRUBBER_HIT_PAD = 12;          // ± padding around the track for taps
 const SCRUBBER_GUTTER = 16;           // x-margin from canvas edges
 const SCRUBBER_TIME_W = 96;           // reserved width for the "M:SS / M:SS" label
 
+// ---- spotlight ----
+const SPOTLIGHT_DIM = 0.22;           // gain multiplier on non-spotlit voices (~ -13 dB)
+const SPOTLIGHT_VISUAL_DIM = 0.35;    // alpha multiplier on non-spotlit voices in the canvas
+const DOUBLE_TAP_MS = 350;            // window for mouse double-click detection
+
 const movementSelectEl = document.getElementById('movement-select');
 const stageViewEl = document.getElementById('stage-view');
 const movementTitleEl = document.getElementById('movement-title-text');
@@ -90,6 +95,8 @@ let statusLine = '';        // appended below the smoke test
 
 let layout = null;          // current stage geometry (CSS px)
 let listenerPos = null;     // { x, y } — phase 6 makes draggable
+let spotlightVoice = null;  // Voice | null — currently spotlit voice
+let lastTap = null;         // { time, target, pointerType } for double-click detection
 
 async function chooseMovement(id) {
   const m = getMovement(id);
@@ -283,6 +290,41 @@ function recomputeSpatial() {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+// ---- spotlight ----
+//
+// Highlight one voice by smoothly ducking every other voice's gain via
+// each Voice's spotlightAttenuation. Visual emphasis (outer ring + dim
+// on the others) is layered on top in drawOneVoice. Passing the same
+// voice that's already spotlit toggles the spotlight off; passing null
+// clears it explicitly.
+function setSpotlight(voice) {
+  if (voice && spotlightVoice === voice) voice = null;
+  spotlightVoice = voice;
+  for (const v of voices) {
+    const target = (!spotlightVoice || v === spotlightVoice) ? 1.0 : SPOTLIGHT_DIM;
+    v.setSpotlightAttenuation(target);
+  }
+  if (touchPanelVoice) refreshTouchPanel();
+}
+
+// Returns true if (target, pointerType) matches a tap recorded within
+// DOUBLE_TAP_MS — i.e. this is the second click of a double-click. Otherwise
+// records the new tap and returns false.
+function recordTap(target, pointerType) {
+  const now = performance.now();
+  if (
+    lastTap &&
+    now - lastTap.time < DOUBLE_TAP_MS &&
+    lastTap.target === target &&
+    lastTap.pointerType === pointerType
+  ) {
+    lastTap = null;
+    return true;
+  }
+  lastTap = { time: now, target, pointerType };
+  return false;
+}
+
 // ---- pointer drag + hover + tap ----
 //
 // Mouse: drag to move; hover sets `hoveredVoice` so wheel/keyboard act
@@ -311,9 +353,18 @@ function hitTest(x, y) {
   const dyL = y - listenerPos.y;
   const lr = VISUAL.listenerRadius + 8;
   if (dxL * dxL + dyL * dyL <= lr * lr) return 'listener';
+  // Spotlit voice is drawn on top — hit-test it first so a click on its
+  // bright outer ring always lands on it, even if it overlaps another.
+  if (spotlightVoice) {
+    const r = voiceRadius(spotlightVoice.part) + 8;
+    const dx = x - spotlightVoice.x;
+    const dy = y - spotlightVoice.y;
+    if (dx * dx + dy * dy <= r * r) return spotlightVoice;
+  }
   // Voices, in reverse order so visually-on-top ones are picked first.
   for (let i = voices.length - 1; i >= 0; i--) {
     const v = voices[i];
+    if (v === spotlightVoice) continue;
     const r = voiceRadius(v.part) + 8;
     const dx = x - v.x;
     const dy = y - v.y;
@@ -355,6 +406,9 @@ function onPointerDown(e) {
   if (!target) {
     // Tap on empty space (touch only) closes the touch panel.
     if (e.pointerType === 'touch') closeTouchPanel();
+    // Stash a tap marker so pointerup can detect a mouse double-click on
+    // empty stage (used to clear an active spotlight).
+    dragStart = { x, y, pointerType: e.pointerType, moved: false };
     return;
   }
   e.preventDefault();
@@ -378,6 +432,9 @@ function onPointerMove(e) {
   const { x, y } = pointerCoords(e);
   if (dragStart && Math.hypot(x - dragStart.x, y - dragStart.y) > TAP_SLOP_PX) {
     dragStart.moved = true;
+    // A drag invalidates the in-progress double-click — otherwise a quick
+    // click after a drag could spuriously trigger spotlight.
+    lastTap = null;
   }
   if (dragTarget === 'scrubber') {
     seekTo(scrubberSecondsAt(x), { keepSilent: true });
@@ -415,6 +472,24 @@ function onPointerUp(e) {
     g.cancelScheduledValues(tNow);
     g.setValueAtTime(0, tNow);
     g.linearRampToValueAtTime(masterVolume, tNow + 0.12);
+  }
+  // Mouse tap (clean click, no drag) → double-click detection for spotlight.
+  // Voice double-click toggles its spotlight; empty-stage double-click
+  // clears an active spotlight. Touch parity goes through the touch panel
+  // (single tap there opens the panel, which has a Spotlight button).
+  if (
+    dragStart &&
+    !dragStart.moved &&
+    dragStart.pointerType !== 'touch' &&
+    dragTarget !== 'scrubber'
+  ) {
+    if (recordTap(dragTarget, 'mouse')) {
+      if (dragTarget && dragTarget !== 'listener') {
+        setSpotlight(dragTarget);
+      } else if (!dragTarget && spotlightVoice) {
+        setSpotlight(null);
+      }
+    }
   }
   dragTarget = null;
   dragStart = null;
@@ -586,6 +661,8 @@ function returnToMenu() {
   layout = null;
   listenerPos = null;
   hoveredVoice = null;
+  spotlightVoice = null;
+  lastTap = null;
   playBtn.disabled = true;
   playBtn.textContent = '▶ Play';
   playBtn.classList.remove('playing');
@@ -686,6 +763,7 @@ const tpTitle         = document.getElementById('tp-title');
 const tpRole          = document.getElementById('tp-role');
 const tpVolume        = document.getElementById('tp-volume');
 const tpMute          = document.getElementById('tp-mute');
+const tpSpotlight     = document.getElementById('tp-spotlight');
 const tpSwapRow       = document.getElementById('tp-swap-row');
 const tpInstrument    = document.getElementById('tp-instrument-label');
 const tpPrev          = document.getElementById('tp-prev');
@@ -713,6 +791,9 @@ function refreshTouchPanel() {
   tpVolume.value = String(v.userVolume);
   tpMute.textContent = v.muted ? 'Unmute' : 'Mute';
   tpMute.classList.toggle('muted', v.muted);
+  const isSpot = (spotlightVoice === v);
+  tpSpotlight.textContent = isSpot ? 'Exit spotlight' : 'Spotlight';
+  tpSpotlight.classList.toggle('active', isSpot);
   if (isSwappable(v.role)) {
     tpSwapRow.hidden = false;
     tpInstrument.textContent = instrumentLabel(v.instrument);
@@ -733,6 +814,10 @@ tpMute.addEventListener('click', () => {
   if (!touchPanelVoice) return;
   touchPanelVoice.setMuted(!touchPanelVoice.muted);
   refreshTouchPanel();
+});
+tpSpotlight.addEventListener('click', () => {
+  if (!touchPanelVoice) return;
+  setSpotlight(touchPanelVoice);
 });
 tpPrev.addEventListener('click', () => {
   if (!touchPanelVoice || !isSwappable(touchPanelVoice.role)) return;
@@ -790,6 +875,10 @@ function resetAll() {
   audio.setEqMid(DEFAULT_EQ_DB);
   audio.setEqTreble(DEFAULT_EQ_DB);
   setTempo(activeMovement.notatedBPM);
+
+  // Clear any active spotlight before per-voice resets so every voice
+  // ends back at full gain (no lingering attenuation).
+  setSpotlight(null);
 
   // Per-voice state.
   for (const v of voices) {
@@ -892,6 +981,9 @@ window.addEventListener('keydown', (e) => {
   } else if (touchPanelVoice) {
     e.preventDefault();
     closeTouchPanel();
+  } else if (spotlightVoice) {
+    e.preventDefault();
+    setSpotlight(null);
   }
 });
 
@@ -1092,7 +1184,15 @@ function drawVoices() {
     const idx = counter.get(voice.role) ?? 0;
     counter.set(voice.role, idx + 1);
     voiceRoleIndex.set(voice, idx);
-    drawOneVoice(voice, idx, tNow);
+  }
+  // Draw non-spotlit voices first, then the spotlit voice last so its
+  // outer ring sits on top of any overlapping circles.
+  for (const voice of voices) {
+    if (voice === spotlightVoice) continue;
+    drawOneVoice(voice, voiceRoleIndex.get(voice), tNow);
+  }
+  if (spotlightVoice) {
+    drawOneVoice(spotlightVoice, voiceRoleIndex.get(spotlightVoice), tNow);
   }
 }
 
@@ -1100,12 +1200,16 @@ function drawOneVoice(voice, indexAmongRole, tNow) {
   const r = voiceRadius(voice.part);
   const baseColor = voiceColor(voice.part, indexAmongRole);
   const pulse = voice.pulseIntensity(tNow);
+  // Visual dim on non-spotlit voices when a spotlight is active. Multiplied
+  // into every alpha so the entire voice (halo, body, border, label) fades
+  // back together.
+  const dim = (spotlightVoice && voice !== spotlightVoice) ? SPOTLIGHT_VISUAL_DIM : 1.0;
 
   // Glow on note onset — soft halo whose radius scales with pulse.
   if (pulse > 0) {
     const glowR = r + 12 * pulse;
     ctx.fillStyle = baseColor;
-    ctx.globalAlpha = 0.25 * pulse;
+    ctx.globalAlpha = 0.25 * pulse * dim;
     ctx.beginPath();
     ctx.arc(voice.x, voice.y, glowR, 0, 2 * Math.PI);
     ctx.fill();
@@ -1114,29 +1218,38 @@ function drawOneVoice(voice, indexAmongRole, tNow) {
 
   // Body. Brighten slightly on pulse.
   ctx.fillStyle = baseColor;
-  ctx.globalAlpha = voice.muted ? 0.25 : 1;
+  ctx.globalAlpha = (voice.muted ? 0.25 : 1) * dim;
   ctx.beginPath();
   ctx.arc(voice.x, voice.y, r, 0, 2 * Math.PI);
   ctx.fill();
   ctx.globalAlpha = 1;
 
   if (pulse > 0) {
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.30 * pulse})`;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.30 * pulse * dim})`;
     ctx.beginPath();
     ctx.arc(voice.x, voice.y, r, 0, 2 * Math.PI);
     ctx.fill();
   }
 
   // Border.
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.strokeStyle = `rgba(0, 0, 0, ${0.4 * dim})`;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(voice.x, voice.y, r, 0, 2 * Math.PI);
   ctx.stroke();
 
+  // Spotlight indicator — bright outer ring on the spotlit voice.
+  if (spotlightVoice === voice) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(voice.x, voice.y, r + 6, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
   // Label.
   if (r >= 14) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.92 * dim})`;
     ctx.font = `${Math.round(r * 0.55)}px ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

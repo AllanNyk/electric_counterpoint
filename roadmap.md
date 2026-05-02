@@ -191,6 +191,19 @@ tempo, not score-encoded seconds.
 
 ---
 
+## Phase 13 — Spotlight a voice ✓
+
+Double-click a voice to bring it to the front and dim the others
+(non-spotlit voices duck to ~22% gain via a per-voice
+`spotlightAttenuation` multiplier on `channelGain`, smoothed with a
+0.25 s linear ramp). The spotlit voice gets a bright outer ring and
+draws on top so a click lands cleanly even if circles overlap.
+Double-click again or double-click empty stage to exit; Esc clears
+when no other overlay is in the way; Reset and back-to-menu both clear
+implicitly. Touch parity through a Spotlight button in the voice panel.
+
+---
+
 ## Beyond core (future)
 
 ### Maximum leverage from the existing engine
@@ -210,9 +223,6 @@ tempo, not score-encoded seconds.
 
 ### Novel interactions
 
-- **Spotlight a voice.** Double-click brings one voice to the front
-  and dims the others — handy for hearing what each canon line is
-  actually doing.
 - **Auto-tour mode.** Listener drifts on its own (path or random walk,
   speed slider) — turns the conductor app into a passive listening
   installation.

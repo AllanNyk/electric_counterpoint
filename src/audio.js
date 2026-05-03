@@ -54,11 +54,15 @@ export class AudioEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.85;
 
-    // Gentle gluing compressor.
+    // Transparent peak-catcher. Original settings (-18/12/3) glued the
+    // mix nicely but squashed authored dynamics — a 6.8 dB p↔f spread
+    // at source compressed to ~2 dB at the output. Threshold raised to
+    // -6 with ratio 2 lets soft notes pass through untouched and only
+    // bites on transient peaks above the knee.
     this.compressor = this.ctx.createDynamicsCompressor();
-    this.compressor.threshold.value = -18;
+    this.compressor.threshold.value = -6;
     this.compressor.knee.value = 12;
-    this.compressor.ratio.value = 3;
+    this.compressor.ratio.value = 2;
     this.compressor.attack.value = 0.005;
     this.compressor.release.value = 0.150;
 
@@ -124,19 +128,25 @@ export class AudioEngine {
     if (this.loadingPromises.has(key)) return this.loadingPromises.get(key);
     const p = (async () => {
       const url = `assets/audio/${instrument}/${note}.mp3`;
-      const r = await fetch(url);
-      // 404 → cache null. Lets palettes with partial pitch coverage
-      // (e.g. marimba's 48–84 vs the score reaching 88) preload without
-      // exploding; Voice.scheduleAhead falls back to the nearest loaded
-      // semitone via playbackRate.
-      if (!r.ok) {
+      // Any failure (404, network error, decode error) → cache null and
+      // resolve null. Lets palettes with partial pitch coverage (e.g.
+      // marimba 48–84 vs score reaching 88) and partial-deploy hosts
+      // load without exploding the whole Promise.all; Voice.scheduleAhead
+      // falls back to the nearest loaded semitone via playbackRate.
+      try {
+        const r = await fetch(url);
+        if (!r.ok) {
+          this.buffers.set(key, null);
+          return null;
+        }
+        const arr = await r.arrayBuffer();
+        const buf = await this.ctx.decodeAudioData(arr);
+        this.buffers.set(key, buf);
+        return buf;
+      } catch (err) {
         this.buffers.set(key, null);
         return null;
       }
-      const arr = await r.arrayBuffer();
-      const buf = await this.ctx.decodeAudioData(arr);
-      this.buffers.set(key, buf);
-      return buf;
     })();
     this.loadingPromises.set(key, p);
     try { return await p; }

@@ -13,7 +13,7 @@ jobs:
         run: |
           echo "files to upload:"
           ls -la index.html src/ assets/audio/ir/
-          for d in guitar_clean guitar_acoustic bass_guitar woodblock; do
+          for d in guitar_clean guitar_acoustic bass_guitar woodblock marimba vibraphone; do
             echo "$d: $(ls assets/audio/$d 2>/dev/null | wc -l) files"
           done
       - name: Deploy via SFTP
@@ -27,6 +27,8 @@ jobs:
           -mkdir webroots/www/electric_counterpoint/assets/audio/guitar_acoustic
           -mkdir webroots/www/electric_counterpoint/assets/audio/bass_guitar
           -mkdir webroots/www/electric_counterpoint/assets/audio/woodblock
+          -mkdir webroots/www/electric_counterpoint/assets/audio/marimba
+          -mkdir webroots/www/electric_counterpoint/assets/audio/vibraphone
           -mkdir webroots/www/electric_counterpoint/assets/audio/ir
           put index.html webroots/www/electric_counterpoint/index.html
           put src/*.js webroots/www/electric_counterpoint/src/
@@ -34,6 +36,8 @@ jobs:
           put assets/audio/guitar_acoustic/*.mp3 webroots/www/electric_counterpoint/assets/audio/guitar_acoustic/
           put assets/audio/bass_guitar/*.mp3 webroots/www/electric_counterpoint/assets/audio/bass_guitar/
           put assets/audio/woodblock/*.mp3 webroots/www/electric_counterpoint/assets/audio/woodblock/
+          put assets/audio/marimba/*.mp3 webroots/www/electric_counterpoint/assets/audio/marimba/
+          put assets/audio/vibraphone/*.mp3 webroots/www/electric_counterpoint/assets/audio/vibraphone/
           put assets/audio/ir/theatre41.wav webroots/www/electric_counterpoint/assets/audio/ir/theatre41.wav
           bye
           SFTP

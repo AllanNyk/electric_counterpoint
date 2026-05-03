@@ -177,8 +177,10 @@ export class Voice {
         }
         const release = ROLE_RELEASE[this.role];
         const dur = release != null ? note.duration * tempoFactor : null;
-        // Per-note gain: 1.0 baseline; channel gain handles volume/mute.
-        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, dur, release, rate);
+        // Per-note gain: parsed dynamic-marking velocity (defaults to
+        // 1.0 = mf for unmarked notes); channel gain handles volume/mute.
+        const vel = note.velocity ?? 1.0;
+        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, vel, dur, release, rate);
         this.recentOnsets.push(audioTime);
       }
       this.scheduledIdx++;

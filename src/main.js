@@ -22,6 +22,7 @@ import { midiToFilename } from './score.js';
 import {
   computeLayout,
   initialVoicePositions,
+  randomVoicePositions,
   defaultListenerPosition,
   voiceColor,
   voiceRadius,
@@ -59,6 +60,7 @@ const reverbSlider  = document.getElementById('reverb-slider');
 const eqBassSlider  = document.getElementById('eq-bass-slider');
 const eqMidSlider   = document.getElementById('eq-mid-slider');
 const eqTrebleSlider= document.getElementById('eq-treble-slider');
+const randomBtn     = document.getElementById('random-btn');
 const resetBtn      = document.getElementById('reset-btn');
 
 const curtainEl       = document.getElementById('curtain');
@@ -914,6 +916,21 @@ function resetAll() {
 }
 
 resetBtn.addEventListener('click', resetAll);
+
+// Scatter every voice to a random position inside the half-moon. Listener
+// stays where it is. Works whether playing or paused — recomputeSpatial
+// pushes the new pan / dry / wet values through.
+function randomizeLayout() {
+  if (!voices.length || !layout || !listenerPos) return;
+  const positions = randomVoicePositions(activeScore.parts, layout, listenerPos);
+  for (const v of voices) {
+    const pos = positions.get(v.id);
+    if (pos) v.setPosition(pos.x, pos.y);
+  }
+  recomputeSpatial();
+}
+
+randomBtn.addEventListener('click', randomizeLayout);
 
 // ---- endgame curtain ----
 //

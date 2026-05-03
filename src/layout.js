@@ -77,6 +77,45 @@ export function initialVoicePositions(parts, layout) {
   return positions;
 }
 
+// Scatter every voice to a random spot inside the half-moon stage.
+// Rejection sampling keeps voices visibly separated and clear of the
+// listener. Listener position is left untouched — the user moves that
+// independently. Used by the top-bar Random button.
+export function randomVoicePositions(parts, layout, listenerPos) {
+  const { arcRadius } = layout;
+  const lx = listenerPos.x;
+  const ly = listenerPos.y;
+  const minR = VISUAL.listenerRadius + 50;
+  const maxR = Math.max(minR + 1, arcRadius * 1.05);
+  const positions = new Map();
+  const placed = [];
+  for (const part of parts) {
+    const vr = voiceRadius(part);
+    let chosen = null;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const theta = Math.random() * Math.PI;
+      const rad = minR + Math.random() * (maxR - minR);
+      const cand = clampToStage(lx + rad * Math.cos(theta), ly - rad * Math.sin(theta), layout);
+      let ok = true;
+      for (const p of placed) {
+        if (Math.hypot(cand.x - p.x, cand.y - p.y) < vr + p.r + 8) { ok = false; break; }
+      }
+      if (ok) { chosen = cand; break; }
+    }
+    // If rejection sampling can't find a clear spot in 120 tries, fall
+    // through with whatever the last sample was — visually crowded but
+    // never broken.
+    if (!chosen) {
+      const theta = Math.random() * Math.PI;
+      const rad = minR + Math.random() * (maxR - minR);
+      chosen = clampToStage(lx + rad * Math.cos(theta), ly - rad * Math.sin(theta), layout);
+    }
+    placed.push({ x: chosen.x, y: chosen.y, r: vr });
+    positions.set(part.id, { x: chosen.x, y: chosen.y });
+  }
+  return positions;
+}
+
 // Clamp (x, y) into the half-moon stage area used for both voices and
 // the listener dot. Returns the constrained coordinates.
 export function clampToStage(x, y, layout) {

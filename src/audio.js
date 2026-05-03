@@ -124,10 +124,16 @@ export class AudioEngine {
     if (this.loadingPromises.has(key)) return this.loadingPromises.get(key);
     const p = (async () => {
       const url = `assets/audio/${instrument}/${note}.mp3`;
-      const arr = await fetch(url).then(r => {
-        if (!r.ok) throw new Error(`failed to fetch ${url}`);
-        return r.arrayBuffer();
-      });
+      const r = await fetch(url);
+      // 404 → cache null. Lets palettes with partial pitch coverage
+      // (e.g. marimba's 48–84 vs the score reaching 88) preload without
+      // exploding; Voice.scheduleAhead falls back to the nearest loaded
+      // semitone via playbackRate.
+      if (!r.ok) {
+        this.buffers.set(key, null);
+        return null;
+      }
+      const arr = await r.arrayBuffer();
       const buf = await this.ctx.decodeAudioData(arr);
       this.buffers.set(key, buf);
       return buf;
@@ -135,6 +141,14 @@ export class AudioEngine {
     this.loadingPromises.set(key, p);
     try { return await p; }
     finally { this.loadingPromises.delete(key); }
+  }
+
+  // True if a non-null buffer is cached for (instrument, note). Lets a
+  // Voice probe semitone neighbours when its bank doesn't cover the
+  // exact pitch.
+  hasBuffer(instrument, note) {
+    const buf = this.buffers.get(`${instrument}:${note}`);
+    return !!buf;
   }
 
   // Schedule a buffered note on a voice channel.
@@ -145,17 +159,21 @@ export class AudioEngine {
   // at full from `when` to `when + duration`, then linearly ramps to 0
   // over `releaseTime`, trimming the bleed between adjacent eighths
   // without quantising onsets.
-  scheduleNote(channel, instrument, note, when, gain = 1.0, duration = null, releaseTime = null) {
+  scheduleNote(channel, instrument, note, when, gain = 1.0, duration = null, releaseTime = null, playbackRate = 1) {
     const key = `${instrument}:${note}`;
     const buf = this.buffers.get(key);
     if (!buf) return null;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
+    if (playbackRate !== 1) src.playbackRate.value = playbackRate;
     const noteGain = this.ctx.createGain();
     noteGain.gain.value = gain;
     src.connect(noteGain).connect(channel.channelGain);
     src.start(when);
     if (duration != null && releaseTime != null) {
+      // playbackRate compresses the buffer in time too, but `duration`
+      // here is the score-driven hold time, not the sample length, so
+      // the envelope still lands where it should regardless of rate.
       const stopAt = when + duration + releaseTime;
       noteGain.gain.setValueAtTime(gain, when + duration);
       noteGain.gain.linearRampToValueAtTime(0, stopAt);

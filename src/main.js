@@ -60,6 +60,7 @@ const reverbSlider  = document.getElementById('reverb-slider');
 const eqBassSlider  = document.getElementById('eq-bass-slider');
 const eqMidSlider   = document.getElementById('eq-mid-slider');
 const eqTrebleSlider= document.getElementById('eq-treble-slider');
+const loadoutSelect = document.getElementById('loadout-select');
 const randomBtn     = document.getElementById('random-btn');
 const resetBtn      = document.getElementById('reset-btn');
 
@@ -173,6 +174,7 @@ async function chooseMovement(id) {
   placeholderEl.style.display = 'none';
   startRenderLoop();
   applyTopBarDefaults();
+  refreshLoadoutSelect();
 
   setStatus(`ready — press ▶ Play to hear ${m.label}`);
   playBtn.disabled = false;
@@ -758,6 +760,7 @@ window.addEventListener('keydown', (e) => {
       const next = nextInstrument(hoveredVoice.instrument, dir);
       hoveredVoice.changeInstrument(next);
       syncTouchPanelIfShowing(hoveredVoice);
+      refreshLoadoutSelect();
     }
   }
   // Escape and `?` are handled by the consolidated overlay handler
@@ -837,11 +840,13 @@ tpPrev.addEventListener('click', () => {
   if (!touchPanelVoice || !isSwappable(touchPanelVoice.role)) return;
   touchPanelVoice.changeInstrument(nextInstrument(touchPanelVoice.instrument, -1));
   refreshTouchPanel();
+  refreshLoadoutSelect();
 });
 tpNext.addEventListener('click', () => {
   if (!touchPanelVoice || !isSwappable(touchPanelVoice.role)) return;
   touchPanelVoice.changeInstrument(nextInstrument(touchPanelVoice.instrument, 1));
   refreshTouchPanel();
+  refreshLoadoutSelect();
 });
 tpClose.addEventListener('click', closeTouchPanel);
 
@@ -865,6 +870,33 @@ eqMidSlider.addEventListener('input', () => {
 });
 eqTrebleSlider.addEventListener('input', () => {
   audio.setEqTreble(parseFloat(eqTrebleSlider.value));
+});
+
+// Loadout: set every swappable voice (live + numbered guitars) to one
+// instrument bank in a single click. Bass and click stay locked to their
+// own banks. The select doubles as a status display — shows "Mixed"
+// (disabled) when ←/→ has made voices heterogeneous.
+function setLoadout(instrumentId) {
+  if (!instrumentId || !voices.length) return;
+  for (const v of voices) {
+    if (!isSwappable(v.role)) continue;
+    if (v.instrument !== instrumentId) v.changeInstrument(instrumentId);
+  }
+  if (touchPanelVoice) refreshTouchPanel();
+}
+
+function refreshLoadoutSelect() {
+  if (!loadoutSelect) return;
+  const swap = voices.filter(v => isSwappable(v.role));
+  if (!swap.length) { loadoutSelect.value = ''; return; }
+  const first = swap[0].instrument;
+  const allSame = swap.every(v => v.instrument === first);
+  loadoutSelect.value = allSame ? first : '';
+}
+
+loadoutSelect.addEventListener('change', () => {
+  setLoadout(loadoutSelect.value);
+  refreshLoadoutSelect();
 });
 
 // Reset everything that the user can change while playing back to its
@@ -913,6 +945,7 @@ function resetAll() {
 
   // Sync any visible touch panel with the new state.
   if (touchPanelVoice) refreshTouchPanel();
+  refreshLoadoutSelect();
 }
 
 resetBtn.addEventListener('click', resetAll);

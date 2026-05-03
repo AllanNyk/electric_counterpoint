@@ -154,11 +154,31 @@ export class Voice {
       // Skip notes that are already in the past (e.g. graces with
       // negative score time when playback starts at t=0).
       if (audioTime >= this.audio.currentTime - 0.005) {
-        const fname = this.filenameFor(note.midi);
+        let fname = this.filenameFor(note.midi);
+        let rate = 1;
+        // Pitched voices: if the current bank doesn't cover this MIDI
+        // (e.g. marimba tops out at C6 but the score reaches E6), find
+        // the nearest loaded semitone and pitch-shift via playbackRate.
+        // Click is unpitched and always uses the single 'click' file.
+        if (this.role !== 'click' && !this.audio.hasBuffer(this.instrument, fname)) {
+          for (let k = 1; k <= 12; k++) {
+            let found = false;
+            for (const d of [-k, k]) {
+              const altFname = midiToFilename(note.midi + d);
+              if (this.audio.hasBuffer(this.instrument, altFname)) {
+                fname = altFname;
+                rate = Math.pow(2, -d / 12);
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
+          }
+        }
         const release = ROLE_RELEASE[this.role];
         const dur = release != null ? note.duration * tempoFactor : null;
         // Per-note gain: 1.0 baseline; channel gain handles volume/mute.
-        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, dur, release);
+        this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, 1.0, dur, release, rate);
         this.recentOnsets.push(audioTime);
       }
       this.scheduledIdx++;

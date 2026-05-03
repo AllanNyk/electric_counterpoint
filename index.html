@@ -181,6 +181,19 @@
       font-variant-numeric: tabular-nums;
       margin-left: 4px;
     }
+    .tb-control select {
+      background: var(--bg);
+      border: 1px solid var(--panel-border);
+      color: var(--fg);
+      padding: 3px 6px;
+      font: inherit;
+      font-size: 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      appearance: auto;
+    }
+    .tb-control select:hover { border-color: var(--accent); }
+    .tb-control select:focus { outline: none; border-color: var(--accent); }
 
     #stage-canvas {
       flex: 1 1 0;
@@ -462,6 +475,16 @@
         <label for="eq-treble-slider">Treble</label>
         <input type="range" id="eq-treble-slider" min="-12" max="12" step="0.5" autocomplete="off">
       </div>
+      <div class="tb-control">
+        <label for="loadout-select">Loadout</label>
+        <select id="loadout-select" autocomplete="off">
+          <option value="" disabled>Mixed</option>
+          <option value="guitar_clean">Clean Electric</option>
+          <option value="guitar_acoustic">Acoustic</option>
+          <option value="marimba">Marimba</option>
+          <option value="vibraphone">Vibraphone</option>
+        </select>
+      </div>
 
       <span class="spacer"></span>
       <button id="about-btn" type="button">About</button>
@@ -502,6 +525,7 @@
         <h3>Top bar</h3>
         <ul>
           <li>Master volume / tempo / reverb wet / 3-band EQ — all live, change while playing</li>
+          <li><kbd>Loadout</kbd> — set every guitar (incl. live) to one instrument bank at once</li>
           <li><kbd>Random</kbd> — scatter voices to random positions on the stage</li>
           <li><kbd>Reset</kbd> — restore default sliders, voice positions, volumes, and instruments</li>
         </ul>

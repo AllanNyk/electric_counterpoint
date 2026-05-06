@@ -52,6 +52,10 @@ const movementTitleEl = document.getElementById('movement-title-text');
 const backBtn = document.getElementById('back-btn');
 const playBtn = document.getElementById('play-btn');
 const placeholderEl = document.getElementById('stage-placeholder');
+const modeToggleBtn = document.getElementById('mode-toggle-btn');
+const canvas3dEl = document.getElementById('stage-canvas-3d');
+const stage3dPromptEl = document.getElementById('stage-3d-prompt');
+const stage3dHintEl = document.getElementById('stage-3d-hint');
 
 const volSlider     = document.getElementById('vol-slider');
 const tempoSlider   = document.getElementById('tempo-slider');
@@ -100,6 +104,12 @@ let layout = null;          // current stage geometry (CSS px)
 let listenerPos = null;     // { x, y } — phase 6 makes draggable
 let spotlightVoice = null;  // Voice | null — currently spotlit voice
 let lastTap = null;         // { time, target, pointerType } for double-click detection
+
+// 3D stage state. Lazily-loaded — Three.js fetch is deferred until the
+// user actually clicks the 3D toggle so non-3D users don't pay for it.
+let stage3d = null;
+let mode = '2d';            // '2d' | '3d'
+let stage3dLoading = false;
 
 async function chooseMovement(id) {
   const m = getMovement(id);
@@ -178,6 +188,7 @@ async function chooseMovement(id) {
 
   setStatus(`ready — press ▶ Play to hear ${m.label}`);
   playBtn.disabled = false;
+  modeToggleBtn.disabled = false;
 }
 
 // Force the slider DOM values to our intended defaults and push them
@@ -272,9 +283,26 @@ function applyStageLayout() {
 
 const SPATIAL_SMOOTH = 0.025;   // setTargetAtTime time constant (sec)
 const PAN_HALF_WIDTH_SCALE = 1.05;
+const STAGE_3D_ARC_RADIUS_M = 5;  // world-space radius of the half-moon, regardless of viewport
+const VOICE_3D_Y = 1.45;        // ear-height world Y for voices (matches stage3d VOICE_Y)
+const MAX_DIST_3D_M = 7;        // distance-normalisation ceiling for 3D dry/wet
+
+// Scale that maps current 2D-canvas px → world metres so the half-moon
+// always lands at STAGE_3D_ARC_RADIUS_M regardless of canvas dims.
+function meters3DPerPx() {
+  return STAGE_3D_ARC_RADIUS_M / (layout?.arcRadius || 1);
+}
 
 function recomputeSpatial() {
   if (!listenerPos || !layout || !voices.length || !audio.ctx) return;
+  if (mode === '3d') {
+    recomputeSpatial3D();
+  } else {
+    recomputeSpatial2D();
+  }
+}
+
+function recomputeSpatial2D() {
   const t = audio.currentTime;
   const halfW = layout.arcRadius * PAN_HALF_WIDTH_SCALE;
   const maxDist = layout.arcRadius * 1.4;
@@ -286,7 +314,84 @@ function recomputeSpatial() {
     const pan = Math.max(-1, Math.min(1, dx / halfW));
     const dry = lerp(1.0, 0.35, nDist);
     const wet = lerp(0.15, 0.55, nDist);
-    v.channel.panner.pan.setTargetAtTime(pan, t, SPATIAL_SMOOTH);
+    v.channel.panner2d.pan.setTargetAtTime(pan, t, SPATIAL_SMOOTH);
+    v.channel.dryGain.gain.setTargetAtTime(dry, t, SPATIAL_SMOOTH);
+    v.channel.wetSend.gain.setTargetAtTime(wet, t, SPATIAL_SMOOTH);
+  }
+}
+
+// Voices don't move in 3D mode (drag is 2D-only by design), but their
+// world position depends on the 2D layout so we re-set it whenever this
+// runs — cheap, and covers the case where the user rearranged in 2D
+// before toggling. Distance-driven dry/wet gains run per-frame from
+// onCameraTick3D instead.
+function recomputeSpatial3D() {
+  if (!stage3d) return;
+  const mpp = stage3d.metersPerPx;
+  for (const v of voices) {
+    const wx = (v.x - layout.cx) * mpp;
+    const wz = (v.y - layout.listenerY) * mpp;
+    audio.setVoicePose(v.channel, wx, VOICE_3D_Y, wz, SPATIAL_SMOOTH);
+  }
+  updateDistanceGains3D();
+}
+
+// Per-frame 3D audio update: listener pose follows the camera, and each
+// voice's dry/wet gains follow camera-to-voice distance. PannerNode
+// handles direction (HRTF) — we don't touch its rolloffFactor (=0), so
+// distance attenuation is entirely in dryGain/wetSend, matching the
+// musical "close=direct, far=roomy" feel of 2D mode.
+function onCameraTick3D(pose) {
+  // Carry sync — pull the carried voice's world position from stage3d
+  // (it's been updated this frame) and reflect it into the Voice's 2D
+  // state + the 3D panner. Doing this before setListenerPose makes sure
+  // audio direction is consistent within the frame.
+  if (stage3d?.isCarrying() && layout) {
+    const id = stage3d.carriedVoiceId();
+    const voice = voices.find(v => v.id === id);
+    const wp = stage3d.getVoiceWorldPos(id);
+    if (voice && wp) {
+      const mpp = stage3d.metersPerPx;
+      const cx2d = layout.cx + wp.x / mpp;
+      const cy2d = layout.listenerY + wp.z / mpp;
+      const clamped = clampToStage(cx2d, cy2d, layout);
+      voice.setPosition(clamped.x, clamped.y);
+      audio.setVoicePose(voice.channel, wp.x, VOICE_3D_Y, wp.z, SPATIAL_SMOOTH);
+    }
+  }
+
+  audio.setListenerPose(
+    pose.x, pose.y, pose.z,
+    pose.fwdX, pose.fwdY, pose.fwdZ,
+    pose.upX, pose.upY, pose.upZ,
+    SPATIAL_SMOOTH
+  );
+  updateDistanceGains3D(pose);
+  // Forward note-onset pulses to the 3D voice meshes. Voice.pulseIntensity
+  // is the same source the 2D renderer reads, so onsets glow in both modes.
+  if (stage3d) {
+    const tNow = audio.currentTime;
+    for (const v of voices) {
+      stage3d.setVoicePulse(v.id, v.pulseIntensity(tNow));
+    }
+  }
+}
+
+function updateDistanceGains3D(poseOpt) {
+  if (!stage3d) return;
+  const t = audio.currentTime;
+  const mpp = stage3d.metersPerPx;
+  const cam = poseOpt || stage3d.getCameraPose();
+  for (const v of voices) {
+    const wx = (v.x - layout.cx) * mpp;
+    const wz = (v.y - layout.listenerY) * mpp;
+    const dx = wx - cam.x;
+    const dy = VOICE_3D_Y - cam.y;
+    const dz = wz - cam.z;
+    const dist = Math.hypot(dx, dy, dz);
+    const nDist = Math.min(1, dist / MAX_DIST_3D_M);
+    const dry = lerp(1.0, 0.35, nDist);
+    const wet = lerp(0.15, 0.55, nDist);
     v.channel.dryGain.gain.setTargetAtTime(dry, t, SPATIAL_SMOOTH);
     v.channel.wetSend.gain.setTargetAtTime(wet, t, SPATIAL_SMOOTH);
   }
@@ -653,6 +758,7 @@ function schedulerTick() {
 
 function returnToMenu() {
   if (isPlaying) stopPlayback();
+  if (mode === '3d') exit3DMode();
   stopRenderLoop();
   closeTouchPanel();
   hideCurtain();
@@ -670,6 +776,7 @@ function returnToMenu() {
   playBtn.disabled = true;
   playBtn.textContent = '▶ Play';
   playBtn.classList.remove('playing');
+  modeToggleBtn.disabled = true;
   // Reset smoke text so the next selection rebuilds it.
   delete placeholderEl.dataset.smokeText;
   placeholderEl.style.display = 'flex';
@@ -690,6 +797,15 @@ const ctx = canvas.getContext('2d');
 function onResize() {
   syncCanvasBitmap();
   if (voices.length) applyStageLayout();
+  if (mode === '3d' && stage3d) {
+    stage3d.resize();
+    // arcRadius changed → metersPerPx changed → voice world coords need
+    // re-projecting so the spheres line up with the new layout (and with
+    // what the audio engine is now using).
+    stage3d.metersPerPx = meters3DPerPx();
+    stage3d.syncVoicePositions(voices, layout);
+    recomputeSpatial3D();
+  }
 }
 window.addEventListener('resize', onResize);
 syncCanvasBitmap();
@@ -781,6 +897,7 @@ const tpRole          = document.getElementById('tp-role');
 const tpVolume        = document.getElementById('tp-volume');
 const tpMute          = document.getElementById('tp-mute');
 const tpSpotlight     = document.getElementById('tp-spotlight');
+const tpCarry         = document.getElementById('tp-carry');
 const tpSwapRow       = document.getElementById('tp-swap-row');
 const tpInstrument    = document.getElementById('tp-instrument-label');
 const tpPrev          = document.getElementById('tp-prev');
@@ -800,6 +917,9 @@ function openTouchPanel(voice) {
 function closeTouchPanel() {
   touchPanelEl.hidden = true;
   touchPanelVoice = null;
+  // Returning to a clean 3D HUD state: re-enable the click-to-lock prompt
+  // and let the interact hint repaint when the player walks near a voice.
+  if (mode === '3d' && stage3d) stage3d.setOverlayActive(false);
 }
 
 function refreshTouchPanel() {
@@ -811,6 +931,9 @@ function refreshTouchPanel() {
   const isSpot = (spotlightVoice === v);
   tpSpotlight.textContent = isSpot ? 'Exit spotlight' : 'Spotlight';
   tpSpotlight.classList.toggle('active', isSpot);
+  // Carry button only makes sense in 3D mode (you carry the voice with
+  // your camera). Hidden in 2D — voices are already drag-to-move there.
+  tpCarry.hidden = (mode !== '3d');
   if (isSwappable(v.role)) {
     tpSwapRow.hidden = false;
     tpInstrument.textContent = instrumentLabel(v.instrument);
@@ -849,6 +972,17 @@ tpNext.addEventListener('click', () => {
   refreshLoadoutSelect();
 });
 tpClose.addEventListener('click', closeTouchPanel);
+
+// "Move (carry)" button — 3D-only. Clicking is a user gesture, so it
+// can re-request pointer lock; main + stage3d then run carry mode until
+// the user presses E to drop.
+tpCarry.addEventListener('click', () => {
+  if (!touchPanelVoice || mode !== '3d' || !stage3d) return;
+  const id = touchPanelVoice.id;
+  closeTouchPanel();
+  stage3d.startCarry(id);
+  canvas3dEl.requestPointerLock?.();
+});
 
 // ---- top-bar slider handlers ----
 
@@ -965,6 +1099,144 @@ function randomizeLayout() {
 
 randomBtn.addEventListener('click', randomizeLayout);
 
+// ---- 3D first-person mode ----
+//
+// Click the "3D" top-bar button to enter a Three.js scene from the
+// listener's POV: WASD + mouse-look (pointer-lock), the half-moon stage
+// rendered as colored spheres at ear height. Audio listener follows the
+// camera; voices pan via HRTF instead of StereoPanner. Voice positions
+// in 3D mirror the current 2D positions (drag stays a 2D-mode action).
+// Exit by clicking the button again (Esc first to release pointer lock,
+// then click).
+
+async function ensureStage3D() {
+  if (stage3d || stage3dLoading) return stage3d;
+  stage3dLoading = true;
+  try {
+    const mod = await import('./stage3d.js');
+    stage3d = new mod.Stage3D(canvas3dEl, stage3dPromptEl, stage3dHintEl);
+    stage3d.onUpdate = onCameraTick3D;
+    stage3d.onInteract = onInteractVoice3D;
+    stage3d.onDrop = onCarryDrop3D;
+  } finally {
+    stage3dLoading = false;
+  }
+  return stage3d;
+}
+
+// E pressed in range of a voice → open the existing voice panel (same
+// controls touch users get) and release pointer lock so the user can
+// click. Carry button only shows in 3D, so set that bit before opening.
+function onInteractVoice3D(voiceId) {
+  const voice = voices.find(v => v.id === voiceId);
+  if (!voice) return;
+  if (stage3d) stage3d.setOverlayActive(true);
+  openTouchPanel(voice);
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+// E pressed while carrying → stage3d already updated the world position
+// every frame; we just need to commit that to the Voice's 2D state so
+// audio panner + 2D layout stay coherent on next 3D entry / 2D return.
+function onCarryDrop3D(voiceId, worldX, worldZ) {
+  const voice = voices.find(v => v.id === voiceId);
+  if (!voice || !layout || !stage3d) return;
+  const mpp = stage3d.metersPerPx;
+  const cx2d = layout.cx + worldX / mpp;
+  const cy2d = layout.listenerY + worldZ / mpp;
+  const clamped = clampToStage(cx2d, cy2d, layout);
+  voice.setPosition(clamped.x, clamped.y);
+  audio.setVoicePose(voice.channel, worldX, VOICE_3D_Y, worldZ, SPATIAL_SMOOTH);
+}
+
+async function enter3DMode() {
+  if (mode === '3d') return;
+  if (!voices.length || !layout || !listenerPos) return;
+  modeToggleBtn.disabled = true;
+  modeToggleBtn.textContent = 'Loading…';
+  try {
+    await ensureStage3D();
+  } catch (err) {
+    setStatus(`failed to load 3D module: ${err.message}`);
+    console.error(err);
+    modeToggleBtn.disabled = false;
+    modeToggleBtn.textContent = '3D';
+    return;
+  }
+  mode = '3d';
+  closeTouchPanel();
+  setSpotlight(null);
+
+  // Hide 2D canvas, show 3D canvas; pause the 2D draw loop.
+  canvas.hidden = true;
+  canvas3dEl.hidden = false;
+  stopRenderLoop();
+
+  // Build the voice list for stage3d (id + color + label + current 2D
+  // position). syncVoicePositions reads v.x / v.y to project each sphere
+  // into world space, so they must be on the objects we pass.
+  const counter = new Map();
+  const voiceList = voices.map(v => {
+    const idx = counter.get(v.role) ?? 0;
+    counter.set(v.role, idx + 1);
+    return {
+      id: v.id,
+      color: voiceColor(v.part, idx),
+      label: v.label,
+      x: v.x, y: v.y,
+    };
+  });
+
+  // Switch audio routing first so the very first frame is HRTF.
+  audio.setSpatialMode('3d');
+
+  stage3d.enter({
+    layout,
+    listenerCanvasPos: listenerPos,
+    voices: voiceList,
+    metersPerPx: meters3DPerPx(),
+  });
+
+  // Push static voice positions + initial listener pose into audio so the
+  // first frame doesn't slew from stale 2D values.
+  recomputeSpatial3D();
+  onCameraTick3D(stage3d.getCameraPose());
+
+  modeToggleBtn.disabled = false;
+  modeToggleBtn.textContent = '2D';
+  modeToggleBtn.classList.add('active');
+  modeToggleBtn.title = 'Return to top-down 2D view';
+}
+
+function exit3DMode() {
+  if (mode !== '3d') return;
+  // Snap the 2D listener-dot to where the player ended up so re-entering
+  // 3D later spawns there too.
+  if (stage3d && layout) {
+    const back = stage3d.getPlayerCanvasPos(layout);
+    listenerPos = clampToStage(back.x, back.y, layout);
+  }
+  if (stage3d) stage3d.exit();
+
+  mode = '2d';
+  audio.setSpatialMode('2d');
+
+  canvas3dEl.hidden = true;
+  canvas.hidden = false;
+  syncCanvasBitmap();
+  startRenderLoop();
+  recomputeSpatial();
+
+  modeToggleBtn.textContent = '3D';
+  modeToggleBtn.classList.remove('active');
+  modeToggleBtn.title = 'Toggle first-person 3D walkthrough';
+}
+
+modeToggleBtn.addEventListener('click', () => {
+  if (mode === '3d') exit3DMode();
+  else enter3DMode();
+});
+
 // ---- endgame curtain ----
 //
 // Shown when the score finishes naturally (every voice exhausted plus a
@@ -979,6 +1251,9 @@ function showCurtain() {
   // actually fires (going from display:none to flex skips transitions).
   void curtainEl.offsetWidth;
   curtainEl.classList.add('visible');
+  // Curtain buttons need a real cursor — release pointer lock if 3D
+  // mode had it grabbed.
+  if (document.pointerLockElement) document.exitPointerLock();
 }
 
 function hideCurtain() {
@@ -1004,6 +1279,10 @@ function openModal(el) {
   // Closing any other modal first keeps state simple.
   closeAllModals();
   el.hidden = false;
+  // Modals expect mouse interaction. If the user is pointer-locked in
+  // 3D mode the cursor is hidden and clicks land at a frozen point —
+  // unlock so they can actually use the modal. (Safe no-op otherwise.)
+  if (document.pointerLockElement) document.exitPointerLock();
 }
 function closeAllModals() {
   helpModal.hidden = true;

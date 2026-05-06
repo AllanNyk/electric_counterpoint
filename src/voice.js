@@ -25,7 +25,7 @@ const ROLE_GAIN = {
 const ROLE_RELEASE = {
   live:   1.1,
   guitar: 1.1,
-  bass:   2.0,
+  bass:   1.1,
   click:  null,
 };
 

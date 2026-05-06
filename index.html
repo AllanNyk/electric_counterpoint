@@ -195,17 +195,75 @@
     .tb-control select:hover { border-color: var(--accent); }
     .tb-control select:focus { outline: none; border-color: var(--accent); }
 
-    #stage-canvas {
+    /* The two stage canvases live in a positioned wrapper; mode toggle
+       flips which one is visible. Block touch gestures (scroll / pinch /
+       double-tap-zoom) so our pointer-event handlers aren't preempted by
+       the browser's own gesture handlers — important on iOS Safari. */
+    #stage-wrap {
+      position: relative;
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+    }
+    #stage-canvas, #stage-canvas-3d {
       flex: 1 1 0;
       min-height: 0;
       width: 100%;
       display: block;
       background: var(--bg);
-      /* Block touch gestures (scroll / pinch / double-tap-zoom) so the
-         pointer events we listen for aren't preempted by the browser's
-         own gesture handlers — important on iOS Safari. */
       touch-action: none;
     }
+    #stage-canvas[hidden], #stage-canvas-3d[hidden] { display: none; }
+    #stage-canvas-3d {
+      background: #06060a;
+      cursor: pointer;
+    }
+    #stage-3d-prompt {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      color: rgba(230, 230, 235, 0.8);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-shadow: 0 0 8px rgba(0,0,0,0.8);
+    }
+    #stage-3d-prompt[hidden] { display: none; }
+    /* In-world action hint — sits low-center while pointer-locked, telling
+       the player what E will do (interact / drop / etc). */
+    #stage-3d-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 36px;
+      display: flex;
+      justify-content: center;
+      pointer-events: none;
+      color: rgba(243, 243, 245, 0.95);
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.85);
+    }
+    #stage-3d-hint[hidden] { display: none; }
+    #stage-3d-hint .hint-pill {
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      padding: 6px 12px;
+    }
+    #stage-3d-hint kbd {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.10);
+      border: 1px solid rgba(255, 255, 255, 0.20);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      margin: 0 2px;
+    }
+    #mode-toggle-btn.active { color: var(--accent); border-color: var(--accent); }
 
     /* Phase 1 placeholder text inside the stage view */
     #stage-placeholder {
@@ -487,14 +545,20 @@
       </div>
 
       <span class="spacer"></span>
+      <button id="mode-toggle-btn" type="button" title="Toggle first-person 3D walkthrough" disabled>3D</button>
       <button id="about-btn" type="button">About</button>
       <button id="help-btn" type="button" title="Show controls (?)">?</button>
       <button id="random-btn" type="button" title="Scatter voices to random positions">Random</button>
       <button id="reset-btn" type="button">Reset</button>
       <button id="back-btn">← Movements</button>
     </div>
-    <canvas id="stage-canvas"></canvas>
-    <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+    <div id="stage-wrap">
+      <canvas id="stage-canvas"></canvas>
+      <canvas id="stage-canvas-3d" hidden></canvas>
+      <div id="stage-3d-prompt" hidden>click to look around · WASD to move · Esc to release</div>
+      <div id="stage-3d-hint" hidden><span class="hint-pill"></span></div>
+      <div id="stage-placeholder">stage view — phase 1 scaffold</div>
+    </div>
   </div>
 
   <!-- Help modal — full controls reference. -->
@@ -588,6 +652,7 @@
     <div class="tp-row">
       <button id="tp-mute" type="button">Mute</button>
       <button id="tp-spotlight" type="button">Spotlight</button>
+      <button id="tp-carry" type="button" hidden>Move (carry)</button>
     </div>
     <div class="tp-row tp-swap-row" id="tp-swap-row">
       <button id="tp-prev" type="button">← Prev</button>
@@ -596,6 +661,17 @@
     </div>
   </div>
 
+  <!-- Importmap for Three.js — core module is loaded on-demand the first
+       time the user enters 3D mode (dynamic import in stage3d.js). The
+       bare specifier "three" is mapped here so any internal references
+       resolve cleanly. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

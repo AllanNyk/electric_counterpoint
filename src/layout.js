@@ -18,16 +18,23 @@
 // derived geometry; initialVoicePositions slots each part into its
 // default spot by role (using arc-radius units so it scales with viewport).
 
-const STAGE_PADDING = 40;            // CSS px gutter from canvas edge
-const LISTENER_BOTTOM_OFFSET = 0.18; // listener sits 18% from the bottom
+const STAGE_PADDING = 24;            // CSS px gutter from canvas edge
+const LISTENER_BOTTOM_OFFSET = 0.10; // listener sits 10% from the bottom
+
+// Voices on the default arc sit at arcRadius * DEFAULT_VOICE_SPREAD from
+// the listener — pushing them out past the half-moon's nominal radius
+// gives them more breathing room without having to grow the canvas.
+const DEFAULT_VOICE_SPREAD = 1.25;
 
 export function computeLayout(canvasWidth, canvasHeight) {
   const cx = canvasWidth / 2;
   const listenerY = canvasHeight * (1 - LISTENER_BOTTOM_OFFSET);
-  const arcRadius = Math.max(
-    120,
-    Math.min(canvasWidth * 0.42, listenerY - STAGE_PADDING)
-  );
+  // Cap so default-spread voices still fit inside the canvas: the
+  // outermost voice sits at arcRadius * DEFAULT_VOICE_SPREAD from cx,
+  // which must stay within (canvasWidth/2 - STAGE_PADDING).
+  const horizCap = (canvasWidth / 2 - STAGE_PADDING) / DEFAULT_VOICE_SPREAD;
+  const vertCap  = (listenerY - STAGE_PADDING) / DEFAULT_VOICE_SPREAD;
+  const arcRadius = Math.max(120, Math.min(horizCap, vertCap));
   return { cx, listenerY, arcRadius, canvasWidth, canvasHeight };
 }
 
@@ -49,18 +56,19 @@ export function initialVoicePositions(parts, layout) {
   // than at the very edges where the arc meets the listener level.
   const arcOrder = [...guitarParts, ...bassParts];
   const slots = Math.max(1, arcOrder.length);
+  const spread = arcRadius * DEFAULT_VOICE_SPREAD;
   for (let i = 0; i < arcOrder.length; i++) {
     const t = (i + 0.5) / slots;
     const angle = Math.PI - t * Math.PI;
     positions.set(arcOrder[i].id, {
-      x: cx + arcRadius * Math.cos(angle),
-      y: listenerY - arcRadius * Math.sin(angle),
+      x: cx + spread * Math.cos(angle),
+      y: listenerY - spread * Math.sin(angle),
     });
   }
 
   // Live guitar: in front of the half-moon, between listener and arc.
   for (const p of liveParts) {
-    positions.set(p.id, { x: cx, y: listenerY - arcRadius * 0.45 });
+    positions.set(p.id, { x: cx, y: listenerY - spread * 0.45 });
   }
 
   // Click: back-left of stage, off-center so it doesn't overlap G5 (the
@@ -69,8 +77,8 @@ export function initialVoicePositions(parts, layout) {
   // scrubber that sits at the very top of the canvas.
   for (const p of clickParts) {
     positions.set(p.id, {
-      x: cx - arcRadius * 0.40,
-      y: Math.max(STAGE_PADDING, listenerY - arcRadius * 1.18),
+      x: cx - spread * 0.40,
+      y: Math.max(STAGE_PADDING, listenerY - spread * 1.18),
     });
   }
 
@@ -86,7 +94,7 @@ export function randomVoicePositions(parts, layout, listenerPos) {
   const lx = listenerPos.x;
   const ly = listenerPos.y;
   const minR = VISUAL.listenerRadius + 50;
-  const maxR = Math.max(minR + 1, arcRadius * 1.05);
+  const maxR = Math.max(minR + 1, arcRadius * 1.4);
   const positions = new Map();
   const placed = [];
   for (const part of parts) {
@@ -121,7 +129,9 @@ export function randomVoicePositions(parts, layout, listenerPos) {
 export function clampToStage(x, y, layout) {
   const { cx, listenerY, arcRadius } = layout;
   // Maximum radius from the default listener position (the "stage edge").
-  const maxR = arcRadius * 1.18;
+  // Widened past the default voice spread so dragged voices have room to
+  // roam past the half-moon's outer arc.
+  const maxR = arcRadius * 1.5;
   const dx = x - cx;
   const dy = y - listenerY;
   const dist = Math.hypot(dx, dy);

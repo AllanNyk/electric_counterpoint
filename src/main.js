@@ -285,7 +285,7 @@ const SPATIAL_SMOOTH = 0.025;   // setTargetAtTime time constant (sec)
 const PAN_HALF_WIDTH_SCALE = 1.05;
 const STAGE_3D_ARC_RADIUS_M = 5;  // world-space radius of the half-moon, regardless of viewport
 const VOICE_3D_Y = 1.45;        // ear-height world Y for voices (matches stage3d VOICE_Y)
-const MAX_DIST_3D_M = 7;        // distance-normalisation ceiling for 3D dry/wet
+const MAX_DIST_3D_M = 9;        // distance-normalisation ceiling for 3D dry/wet (sized to the wider room)
 
 // Scale that maps current 2D-canvas px → world metres so the half-moon
 // always lands at STAGE_3D_ARC_RADIUS_M regardless of canvas dims.
@@ -685,7 +685,7 @@ function startPlayback() {
   const tempoFactor = ENCODED_BPM / currentBPM;
   playbackStart = audio.currentTime + PLAYBACK_LEAD_IN - startSec * tempoFactor;
   isPlaying = true;
-  playBtn.textContent = '■ Stop';
+  playBtn.textContent = '❙❙ Pause';
   playBtn.classList.add('playing');
   setStatus(`playing ${activeMovement.label} @ ♩=${activeMovement.notatedBPM}`);
   schedulerTick();
@@ -710,8 +710,11 @@ function currentScoreSeconds() {
   return pendingScoreStart;
 }
 
-function stopPlayback() {
+function pausePlayback() {
   if (!isPlaying) return;
+  // Remember where we are so the next Play resumes here. Reset button is
+  // the only thing that rewinds to t=0.
+  pendingScoreStart = currentScoreSeconds();
   isPlaying = false;
   if (schedulerHandle) {
     clearTimeout(schedulerHandle);
@@ -728,7 +731,7 @@ function stopPlayback() {
 
   playBtn.textContent = '▶ Play';
   playBtn.classList.remove('playing');
-  setStatus(`stopped — press ▶ Play to restart`);
+  setStatus(`paused — press ▶ Play to resume`);
 }
 
 function schedulerTick() {
@@ -757,7 +760,7 @@ function schedulerTick() {
 }
 
 function returnToMenu() {
-  if (isPlaying) stopPlayback();
+  if (isPlaying) pausePlayback();
   if (mode === '3d') exit3DMode();
   stopRenderLoop();
   closeTouchPanel();
@@ -789,7 +792,7 @@ for (const btn of document.querySelectorAll('.movement-btn')) {
   btn.addEventListener('click', () => chooseMovement(btn.dataset.movement));
 }
 backBtn.addEventListener('click', returnToMenu);
-playBtn.addEventListener('click', () => (isPlaying ? stopPlayback() : startPlayback()));
+playBtn.addEventListener('click', () => (isPlaying ? pausePlayback() : startPlayback()));
 
 const canvas = document.getElementById('stage-canvas');
 const ctx = canvas.getContext('2d');
@@ -852,13 +855,13 @@ window.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
   if (e.key === ' ' || e.code === 'Space') {
-    // Global play / stop. Skip when a modal or the curtain is up so
+    // Global play / pause. Skip when a modal or the curtain is up so
     // their own buttons can still receive Space (e.g. Start over on
     // the curtain).
     if (anyModalOpen() || !curtainEl.hidden) return;
     if (playBtn.disabled) return;
     e.preventDefault();
-    if (isPlaying) stopPlayback();
+    if (isPlaying) pausePlayback();
     else startPlayback();
     return;
   }

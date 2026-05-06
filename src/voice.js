@@ -29,6 +29,24 @@ const ROLE_RELEASE = {
   click:  null,
 };
 
+// Per-instrument tuning that overrides role defaults. Mallet samples
+// behave very differently from guitar:
+//   - Marimba:    short natural decay (~0.5 s); a 1.1 s release tail just
+//                 fades silence, but a tighter envelope keeps adjacent
+//                 sixteenths clean. Slight gain bump because the bank
+//                 reads a touch quiet next to clean electric.
+//   - Vibraphone: long bell-like sustain. A 1.1 s release chops the ring
+//                 off prematurely; 2.4 s lets the bars sing. Gain trimmed
+//                 because the bank's brightness can sit forward in the mix.
+const INSTRUMENT_RELEASE = {
+  marimba:    0.5,
+  vibraphone: 2.4,
+};
+const INSTRUMENT_GAIN_BIAS = {
+  marimba:    1.10,
+  vibraphone: 0.85,
+};
+
 export class Voice {
   constructor(part, audio, instrument) {
     this.part = part;
@@ -175,11 +193,13 @@ export class Voice {
             if (found) break;
           }
         }
-        const release = ROLE_RELEASE[this.role];
+        const release = INSTRUMENT_RELEASE[this.instrument] ?? ROLE_RELEASE[this.role];
         const dur = release != null ? note.duration * tempoFactor : null;
         // Per-note gain: parsed dynamic-marking velocity (defaults to
-        // 1.0 = mf for unmarked notes); channel gain handles volume/mute.
-        const vel = note.velocity ?? 1.0;
+        // 1.0 = mf for unmarked notes), then biased by the instrument bank
+        // so e.g. vibraphone doesn't sit too forward when swapped in mid-
+        // piece. Channel gain handles user volume / mute / spotlight.
+        const vel = (note.velocity ?? 1.0) * (INSTRUMENT_GAIN_BIAS[this.instrument] ?? 1.0);
         this.audio.scheduleNote(this.channel, this.instrument, fname, audioTime, vel, dur, release, rate);
         this.recentOnsets.push(audioTime);
       }

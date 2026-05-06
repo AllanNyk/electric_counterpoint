@@ -38,9 +38,9 @@ import {
   SRGBColorSpace,
 } from 'three';
 
-const ROOM_W = 16;          // metres, X span
-const ROOM_D = 14;          // metres, Z span
-const ROOM_H = 4;           // metres, ceiling height
+const ROOM_W = 24;          // metres, X span
+const ROOM_D = 21;          // metres, Z span
+const ROOM_H = 4;           // metres, ceiling height (unchanged — only widening horizontally)
 const ROOM_X_MIN = -ROOM_W / 2;
 const ROOM_X_MAX =  ROOM_W / 2;
 const ROOM_Z_MIN = -ROOM_D * 0.75;   // farther ahead of origin
@@ -61,6 +61,13 @@ const INTERACT_RADIUS = 1.6;       // metres — within this, E opens the panel
 const CARRY_FORWARD = 1.2;         // metres in front of camera
 const CARRY_DOWN = 0.18;           // drop slightly below eye-line so you can see it
 const CARRY_LERP = 0.25;           // 0..1 per-frame blend → smooths the carried position
+
+// Idle bobbing — every voice drifts up/down by BOB_AMP_M at BOB_FREQ_HZ,
+// each with a random phase offset so they don't move in lockstep. Skipped
+// for the carried voice so the held one tracks the camera cleanly.
+const BOB_FREQ_HZ = 0.55;
+const BOB_AMP_M = 0.025;
+const BOB_OMEGA = BOB_FREQ_HZ * 2 * Math.PI;
 
 const WALK_SPEED = 3.0;     // m/s
 const RUN_SPEED  = 5.0;     // m/s (shift)
@@ -147,7 +154,7 @@ export class Stage3D {
     stageTex.repeat.set(2.5, 2.5);
     stageTex.colorSpace = SRGBColorSpace;
     const stageMark = new Mesh(
-      new CircleGeometry(5.8, 64, Math.PI, Math.PI),
+      new CircleGeometry(7.5, 64, Math.PI, Math.PI),
       new MeshStandardMaterial({ map: stageTex, roughness: 0.7, metalness: 0.05 })
     );
     stageMark.rotation.x = -Math.PI / 2;
@@ -242,9 +249,9 @@ export class Stage3D {
 
     // Stage spot — pools warm light over the half-moon, mimicking the
     // 2D stage's radial gradient. Penumbra softens the edge.
-    const spot = new SpotLight(0xffd2a0, 1.6, 14, Math.PI / 4, 0.55, 1.2);
+    const spot = new SpotLight(0xffd2a0, 1.6, 20, Math.PI / 4, 0.55, 1.2);
     spot.position.set(0, ROOM_H - 0.2, -1.5);
-    spot.target.position.set(0, 0, -3);
+    spot.target.position.set(0, 0, -4);
     this.scene.add(spot);
     this.scene.add(spot.target);
   }
@@ -283,6 +290,7 @@ export class Stage3D {
       this.voiceMeshes.set(v.id, {
         mesh, label, labelText: v.label || v.id,
         baseColor, pulseIntensity: 0, bumpUntil: 0,
+        bobPhase: Math.random() * Math.PI * 2,
       });
     }
   }
@@ -700,6 +708,18 @@ export class Stage3D {
           );
         }
       }
+    }
+
+    // Idle bob — sinusoidal Y offset per voice (skipping the carried one,
+    // whose Y is driven by the camera). Phase is randomised per voice so
+    // the half-moon visibly breathes rather than rising and falling in
+    // unison. Label tracks the sphere so the text doesn't detach.
+    const tSec = tNow / 1000;
+    for (const [id, entry] of this.voiceMeshes) {
+      if (id === this._carriedVoiceId) continue;
+      const bobY = Math.sin(tSec * BOB_OMEGA + entry.bobPhase) * BOB_AMP_M;
+      entry.mesh.position.y = VOICE_Y + bobY;
+      if (entry.label) entry.label.position.y = VOICE_Y + LABEL_OFFSET_Y + bobY;
     }
 
     // Proximity check → drive interact prompt. Skip while carrying since

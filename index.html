@@ -263,6 +263,55 @@
       font-size: 12px;
       margin: 0 2px;
     }
+    /* Touch HUD for 3D mode — left thumb joystick + right-side look zone.
+       Hidden on desktop and when an overlay is up. The two zones are
+       siblings; #stage-3d-touch-stick paints last so it wins pointer
+       events in its corner. */
+    #stage-3d-touch-hud {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+    #stage-3d-touch-hud[hidden] { display: none; }
+    #stage-3d-touch-look {
+      position: absolute;
+      inset: 0;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #stage-3d-touch-stick {
+      position: absolute;
+      left: 18px;
+      bottom: 18px;
+      width: 200px;
+      height: 200px;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #stage-3d-touch-stick .stick-ring {
+      position: absolute;
+      width: 132px;
+      height: 132px;
+      border: 2px solid rgba(255, 255, 255, 0.30);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.22);
+      transform: translate(-50%, -50%);
+      display: none;
+    }
+    #stage-3d-touch-stick .stick-nub {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.55);
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+    }
+    #stage-3d-touch-stick.active .stick-ring,
+    #stage-3d-touch-stick.active .stick-nub { display: block; }
     #mode-toggle-btn.active { color: var(--accent); border-color: var(--accent); }
 
     /* Phase 1 placeholder text inside the stage view */
@@ -557,6 +606,13 @@
       <canvas id="stage-canvas-3d" hidden></canvas>
       <div id="stage-3d-prompt" hidden>click to look around · WASD to move · Esc to release</div>
       <div id="stage-3d-hint" hidden><span class="hint-pill"></span></div>
+      <div id="stage-3d-touch-hud" hidden>
+        <div id="stage-3d-touch-look"></div>
+        <div id="stage-3d-touch-stick">
+          <div class="stick-ring"></div>
+          <div class="stick-nub"></div>
+        </div>
+      </div>
       <div id="stage-placeholder">stage view — phase 1 scaffold</div>
     </div>
   </div>

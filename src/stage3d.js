@@ -74,15 +74,33 @@ const RUN_SPEED  = 5.0;     // m/s (shift)
 const MOUSE_SENS = 0.0022;  // radians per pixel
 const PITCH_LIMIT = Math.PI * 0.49;
 
+// Touch / mobile tunables. IS_COARSE branches the renderer config (lower
+// AA + DPR cap), the sphere mesh density, and which input scheme is wired
+// up. Pointer-lock + WASD + mouse-look don't exist on touch, so coarse-
+// pointer devices use an on-screen joystick + drag-to-look + tap-to-act.
+const IS_COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const SPHERE_W_SEGS = IS_COARSE ? 16 : 24;
+const SPHERE_H_SEGS = IS_COARSE ? 12 : 16;
+const PIXEL_RATIO_CAP = IS_COARSE ? 1.5 : 2;
+const STICK_RADIUS_PX = 64;          // distance from origin where joystick reads ±1
+const TOUCH_LOOK_SENS = 0.0035;      // rad/px for swipe-to-look (a touch above MOUSE_SENS — finger swipes are coarser than mouse moves)
+const TOUCH_TAP_MS = 350;            // ≤ this ms with little movement = tap, not drag
+const TOUCH_TAP_SLOP_PX = 8;
+
 export class Stage3D {
-  constructor(canvas, promptEl, hintEl) {
+  constructor(canvas, promptEl, hintEl, touchHudEl, stickEl, stickRingEl, stickNubEl, lookZoneEl) {
     this.canvas = canvas;
-    this.promptEl = promptEl;        // "click to look around" overlay
-    this.hintEl = hintEl;             // in-world action hint ("Press E to …")
+    this.promptEl = promptEl;        // "click to look around" / touch instructions overlay
+    this.hintEl = hintEl;             // in-world action hint ("Press E to …" / "tap to …")
+    this.touchHudEl = touchHudEl ?? null;     // wrapper for the joystick + look zone (coarse-pointer only)
+    this.stickEl = stickEl ?? null;
+    this.stickRingEl = stickRingEl ?? null;
+    this.stickNubEl = stickNubEl ?? null;
+    this.lookZoneEl = lookZoneEl ?? null;
     this.active = false;
     this.onUpdate = null;             // (pose) => void; called once per frame
-    this.onInteract = null;           // (voiceId) => void; E pressed near a voice
-    this.onDrop = null;               // (voiceId, worldX, worldZ) => void; E pressed while carrying
+    this.onInteract = null;           // (voiceId) => void; tap / E near a voice
+    this.onDrop = null;               // (voiceId, worldX, worldZ) => void; tap / E while carrying
     this.metersPerPx = 1;             // set in enter()
 
     // Interaction state.
@@ -96,8 +114,10 @@ export class Stage3D {
     this.camera = new PerspectiveCamera(70, 1, 0.05, 100);
     this.camera.position.set(0, PLAYER_EYE_Y, 0);
 
-    this.renderer = new WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+    // antialias is the bigger MSAA cost; on phones the GPU is fillrate-
+    // bound, so we prefer fewer samples + capped DPR over crisp edges.
+    this.renderer = new WebGLRenderer({ canvas, antialias: !IS_COARSE });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, PIXEL_RATIO_CAP));
 
     this._buildRoom();
     this._buildLights();
@@ -117,13 +137,42 @@ export class Stage3D {
     this._rafHandle = null;
     this._lastFrame = 0;
 
+    // Touch input — analog joystick output (-1..1 per axis) feeds into
+    // the same per-frame movement code as WASD. _stickPointerId /
+    // _lookPointerId track the two simultaneous fingers; tap detection on
+    // the look zone replaces the keyboard 'E' for interact / drop.
+    this.touchInput = { f: 0, r: 0 };
+    this._stickPointerId = null;
+    this._stickOriginX = 0;
+    this._stickOriginY = 0;
+    this._lookPointerId = null;
+    this._lookLastX = 0;
+    this._lookLastY = 0;
+    this._lookMoved = 0;
+    this._lookStartTime = 0;
+
     // Bind handlers so add/remove can pair up.
     this._onClick = this._onClick.bind(this);
     this._onPointerLockChange = this._onPointerLockChange.bind(this);
     this._onMouseMove = this._onMouseMove.bind(this);
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
+    this._onStickDown = this._onStickDown.bind(this);
+    this._onStickMove = this._onStickMove.bind(this);
+    this._onStickUp = this._onStickUp.bind(this);
+    this._onLookDown = this._onLookDown.bind(this);
+    this._onLookMove = this._onLookMove.bind(this);
+    this._onLookUp = this._onLookUp.bind(this);
     this._tick = this._tick.bind(this);
+
+    // Coarse-pointer devices (phones, tablets): swap the prompt copy and
+    // wire up the touch HUD. The HUD itself stays hidden until enter().
+    if (IS_COARSE) {
+      if (this.promptEl) {
+        this.promptEl.textContent = 'left thumb to walk · drag to look · tap voice to interact';
+      }
+      this._installTouchHud();
+    }
   }
 
   _buildRoom() {
@@ -280,7 +329,7 @@ export class Stage3D {
         metalness: 0.1,
         emissive: baseColor.clone().multiplyScalar(0.15),
       });
-      const mesh = new Mesh(new SphereGeometry(VOICE_RADIUS, 24, 16), mat);
+      const mesh = new Mesh(new SphereGeometry(VOICE_RADIUS, SPHERE_W_SEGS, SPHERE_H_SEGS), mat);
       mesh.position.set(0, VOICE_Y, 0);
       this.voiceGroup.add(mesh);
 
@@ -412,6 +461,7 @@ export class Stage3D {
 
     this.resize();
     this.promptEl.hidden = false;
+    if (IS_COARSE && this.touchHudEl) this.touchHudEl.hidden = false;
 
     this._lastFrame = performance.now();
     this._rafHandle = requestAnimationFrame(this._tick);
@@ -435,8 +485,11 @@ export class Stage3D {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     this.keys.clear();
+    this._resetStick();
+    this._lookPointerId = null;
 
     if (this.promptEl) this.promptEl.hidden = true;
+    if (this.touchHudEl) this.touchHudEl.hidden = true;
   }
 
   resize() {
@@ -478,6 +531,10 @@ export class Stage3D {
     // Don't re-engage pointer lock while an overlay (voice panel, modal)
     // is up — user may be trying to interact with it, not the canvas.
     if (this._overlayActive) return;
+    // Pointer-lock isn't usable on touch devices; the touch HUD owns
+    // input there. Calling requestPointerLock would either no-op or
+    // race with the iOS gesture system, so skip it cleanly.
+    if (IS_COARSE) return;
     this.canvas.requestPointerLock?.();
   }
 
@@ -513,17 +570,24 @@ export class Stage3D {
       e.preventDefault();
     } else if (k === 'e') {
       e.preventDefault();
-      if (this._carriedVoiceId) {
-        // Drop at current carried-mesh position.
-        const entry = this.voiceMeshes.get(this._carriedVoiceId);
-        if (entry && this.onDrop) {
-          this.onDrop(this._carriedVoiceId, entry.mesh.position.x, entry.mesh.position.z);
-        }
-        this._carriedVoiceId = null;
-        this._refreshHint();
-      } else if (this._nearVoiceId && this.onInteract) {
-        this.onInteract(this._nearVoiceId);
+      this._triggerInteract();
+    }
+  }
+
+  // Shared interact / drop entry point. Desktop calls this on E; touch
+  // calls it from a tap on the look zone. Behavior: if carrying, drop
+  // the held voice at its current world position; otherwise interact
+  // with the nearest voice within INTERACT_RADIUS (if any).
+  _triggerInteract() {
+    if (this._carriedVoiceId) {
+      const entry = this.voiceMeshes.get(this._carriedVoiceId);
+      if (entry && this.onDrop) {
+        this.onDrop(this._carriedVoiceId, entry.mesh.position.x, entry.mesh.position.z);
       }
+      this._carriedVoiceId = null;
+      this._refreshHint();
+    } else if (this._nearVoiceId && this.onInteract) {
+      this.onInteract(this._nearVoiceId);
     }
   }
 
@@ -563,33 +627,52 @@ export class Stage3D {
   }
 
   // External "I'm using HTML overlays right now, hush" toggle. Used by
-  // main.js to suppress the click-to-lock prompt + interact hint while
-  // the voice panel is open.
+  // main.js to suppress the click-to-lock prompt + interact hint + touch
+  // HUD while the voice panel is open.
   setOverlayActive(on) {
     this._overlayActive = on;
     if (on) {
       if (this.promptEl) this.promptEl.hidden = true;
       if (this.hintEl) this.hintEl.hidden = true;
+      if (this.touchHudEl) this.touchHudEl.hidden = true;
+      // If a finger was holding the joystick when the panel opened, drop
+      // it cleanly so the camera doesn't keep gliding behind the overlay.
+      this._resetStick();
+      this._lookPointerId = null;
     } else {
       // Let the next _refreshHint / pointerlockchange repaint correctly.
       this._refreshHint();
-      if (!this._locked && this.active) this.promptEl.hidden = false;
+      if (IS_COARSE) {
+        if (this.touchHudEl && this.active) this.touchHudEl.hidden = false;
+        if (this.promptEl && this.active) this.promptEl.hidden = false;
+      } else if (!this._locked && this.active) {
+        this.promptEl.hidden = false;
+      }
     }
   }
 
   _refreshHint() {
     if (!this.hintEl) return;
-    if (this._overlayActive || !this.active || !this._locked) {
+    if (this._overlayActive || !this.active) {
       this.hintEl.hidden = true;
       return;
     }
+    // Desktop: hint only makes sense when pointer-locked (otherwise the
+    // mouse is free and there's no "near voice" frame). Touch: HUD is
+    // always live while the session is active, so the hint is too.
+    const inputReady = IS_COARSE || this._locked;
+    if (!inputReady) {
+      this.hintEl.hidden = true;
+      return;
+    }
+    const cue = IS_COARSE ? '<kbd>tap</kbd>' : '<kbd>E</kbd>';
     let text = null;
     if (this._carriedVoiceId) {
       const label = this._labelFor(this._carriedVoiceId);
-      text = `carrying ${label} — <kbd>E</kbd> to drop`;
+      text = `carrying ${label} — ${cue} to drop`;
     } else if (this._nearVoiceId) {
       const label = this._labelFor(this._nearVoiceId);
-      text = `<kbd>E</kbd> · interact with ${label}`;
+      text = `${cue} · interact with ${label}`;
     }
     const pill = this.hintEl.querySelector('.hint-pill');
     if (text == null) {
@@ -608,6 +691,120 @@ export class Stage3D {
   _onKeyUp(e) {
     const k = e.key.toLowerCase();
     this.keys.delete(k);
+  }
+
+  // ---- touch HUD ----
+  //
+  // Two zones layered over the 3D canvas (only on coarse-pointer devices):
+  //   stick zone   — a 200×200 pad in the bottom-left. Touchdown spawns the
+  //                  ring at that point; finger displacement up to
+  //                  STICK_RADIUS_PX gives an analog (-1..1) reading on
+  //                  forward/right axes that feeds movement.
+  //   look zone    — the rest of the screen. Drag yaws/pitches the camera.
+  //                  A short tap with no drag is the touch equivalent of
+  //                  the keyboard 'E' key (interact / drop).
+  //
+  // Both zones use Pointer Events with setPointerCapture, so multi-touch
+  // (one finger walking, the other looking) works naturally. Stick and
+  // look pointers are tracked by id and don't interfere with each other.
+  _installTouchHud() {
+    if (!this.stickEl || !this.lookZoneEl) return;
+    this.stickEl.addEventListener('pointerdown', this._onStickDown);
+    this.stickEl.addEventListener('pointermove', this._onStickMove);
+    this.stickEl.addEventListener('pointerup', this._onStickUp);
+    this.stickEl.addEventListener('pointercancel', this._onStickUp);
+    this.lookZoneEl.addEventListener('pointerdown', this._onLookDown);
+    this.lookZoneEl.addEventListener('pointermove', this._onLookMove);
+    this.lookZoneEl.addEventListener('pointerup', this._onLookUp);
+    this.lookZoneEl.addEventListener('pointercancel', this._onLookUp);
+  }
+
+  _resetStick() {
+    this._stickPointerId = null;
+    this.touchInput.f = 0;
+    this.touchInput.r = 0;
+    if (this.stickEl) this.stickEl.classList.remove('active');
+  }
+
+  _onStickDown(e) {
+    if (this._stickPointerId !== null) return;
+    e.preventDefault();
+    try { this.stickEl.setPointerCapture(e.pointerId); } catch {}
+    this._stickPointerId = e.pointerId;
+    const rect = this.stickEl.getBoundingClientRect();
+    this._stickOriginX = e.clientX - rect.left;
+    this._stickOriginY = e.clientY - rect.top;
+    if (this.stickRingEl) {
+      this.stickRingEl.style.left = `${this._stickOriginX}px`;
+      this.stickRingEl.style.top  = `${this._stickOriginY}px`;
+    }
+    if (this.stickNubEl) {
+      this.stickNubEl.style.left = `${this._stickOriginX}px`;
+      this.stickNubEl.style.top  = `${this._stickOriginY}px`;
+    }
+    this.stickEl.classList.add('active');
+    this.touchInput.f = 0;
+    this.touchInput.r = 0;
+  }
+
+  _onStickMove(e) {
+    if (e.pointerId !== this._stickPointerId) return;
+    const rect = this.stickEl.getBoundingClientRect();
+    let dx = (e.clientX - rect.left) - this._stickOriginX;
+    let dy = (e.clientY - rect.top)  - this._stickOriginY;
+    const mag = Math.hypot(dx, dy);
+    if (mag > STICK_RADIUS_PX) {
+      dx = dx * STICK_RADIUS_PX / mag;
+      dy = dy * STICK_RADIUS_PX / mag;
+    }
+    if (this.stickNubEl) {
+      this.stickNubEl.style.left = `${this._stickOriginX + dx}px`;
+      this.stickNubEl.style.top  = `${this._stickOriginY + dy}px`;
+    }
+    // Up on screen = forward in world (-dy → +forward).
+    this.touchInput.r = dx / STICK_RADIUS_PX;
+    this.touchInput.f = -dy / STICK_RADIUS_PX;
+  }
+
+  _onStickUp(e) {
+    if (e.pointerId !== this._stickPointerId) return;
+    try { this.stickEl.releasePointerCapture(e.pointerId); } catch {}
+    this._resetStick();
+  }
+
+  _onLookDown(e) {
+    if (this._lookPointerId !== null) return;
+    e.preventDefault();
+    try { this.lookZoneEl.setPointerCapture(e.pointerId); } catch {}
+    this._lookPointerId = e.pointerId;
+    this._lookLastX = e.clientX;
+    this._lookLastY = e.clientY;
+    this._lookMoved = 0;
+    this._lookStartTime = performance.now();
+  }
+
+  _onLookMove(e) {
+    if (e.pointerId !== this._lookPointerId) return;
+    const dx = e.clientX - this._lookLastX;
+    const dy = e.clientY - this._lookLastY;
+    this._lookLastX = e.clientX;
+    this._lookLastY = e.clientY;
+    this._lookMoved += Math.hypot(dx, dy);
+    this.yaw   -= dx * TOUCH_LOOK_SENS;
+    this.pitch -= dy * TOUCH_LOOK_SENS;
+    if (this.pitch >  PITCH_LIMIT) this.pitch =  PITCH_LIMIT;
+    if (this.pitch < -PITCH_LIMIT) this.pitch = -PITCH_LIMIT;
+    this._applyCameraOrientation();
+  }
+
+  _onLookUp(e) {
+    if (e.pointerId !== this._lookPointerId) return;
+    try { this.lookZoneEl.releasePointerCapture(e.pointerId); } catch {}
+    this._lookPointerId = null;
+    const elapsed = performance.now() - this._lookStartTime;
+    if (this._lookMoved < TOUCH_TAP_SLOP_PX && elapsed < TOUCH_TAP_MS) {
+      this._triggerInteract();
+    }
   }
 
   _applyCameraOrientation() {
@@ -629,26 +826,39 @@ export class Stage3D {
     const dt = Math.min(0.05, (tNow - this._lastFrame) / 1000);
     this._lastFrame = tNow;
 
-    // Movement (only when locked). Forward = horizontal projection of
-    // the camera's facing direction so looking up/down doesn't fly the
-    // player off the floor.
-    if (this._locked) {
-      const speed = this.keys.has('shift') ? RUN_SPEED : WALK_SPEED;
+    // Movement gate: desktop needs pointer-lock; touch is always live
+    // while in 3D mode and no overlay is up. Forward = horizontal
+    // projection of the camera's facing direction so looking up/down
+    // doesn't fly the player off the floor.
+    const inputActive = IS_COARSE ? (this.active && !this._overlayActive) : this._locked;
+    if (inputActive) {
       const fwdX = -Math.sin(this.yaw);
       const fwdZ = -Math.cos(this.yaw);
       const rightX =  Math.cos(this.yaw);
       const rightZ = -Math.sin(this.yaw);
-      let mx = 0, mz = 0;
-      if (this.keys.has('w')) { mx += fwdX; mz += fwdZ; }
-      if (this.keys.has('s')) { mx -= fwdX; mz -= fwdZ; }
-      if (this.keys.has('d')) { mx += rightX; mz += rightZ; }
-      if (this.keys.has('a')) { mx -= rightX; mz -= rightZ; }
-      const mag = Math.hypot(mx, mz);
-      if (mag > 0) {
-        mx /= mag; mz /= mag;
+      // Combine keyboard (digital ±1 per axis) and joystick (analog
+      // -1..1 per axis). Either input source can drive movement; both
+      // contribute additively if somehow both are present (hybrid input).
+      let inF = 0, inR = 0;
+      if (this.keys.has('w')) inF += 1;
+      if (this.keys.has('s')) inF -= 1;
+      if (this.keys.has('d')) inR += 1;
+      if (this.keys.has('a')) inR -= 1;
+      inF += this.touchInput.f;
+      inR += this.touchInput.r;
+      const intent = Math.hypot(inF, inR);
+      if (intent > 0) {
+        // Direction normalised so diagonals don't move √2 faster.
+        const dirX = (inF * fwdX + inR * rightX) / intent;
+        const dirZ = (inF * fwdZ + inR * rightZ) / intent;
+        // Joystick gives analog speed via the magnitude (0..1); keyboard
+        // is always full-throttle. clamp so a partial joystick reading
+        // doesn't over-clamp a keyboard input pushing the magnitude > 1.
+        const throttle = Math.min(1, intent);
+        const speed = (this.keys.has('shift') ? RUN_SPEED : WALK_SPEED) * throttle;
         const p = this.camera.position;
-        let nx = p.x + mx * speed * dt;
-        let nz = p.z + mz * speed * dt;
+        let nx = p.x + dirX * speed * dt;
+        let nz = p.z + dirZ * speed * dt;
         // Wall clamp.
         if (nx < ROOM_X_MIN + PLAYER_PAD) nx = ROOM_X_MIN + PLAYER_PAD;
         if (nx > ROOM_X_MAX - PLAYER_PAD) nx = ROOM_X_MAX - PLAYER_PAD;

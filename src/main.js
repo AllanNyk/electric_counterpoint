@@ -56,6 +56,11 @@ const modeToggleBtn = document.getElementById('mode-toggle-btn');
 const canvas3dEl = document.getElementById('stage-canvas-3d');
 const stage3dPromptEl = document.getElementById('stage-3d-prompt');
 const stage3dHintEl = document.getElementById('stage-3d-hint');
+const stage3dTouchHudEl = document.getElementById('stage-3d-touch-hud');
+const stage3dStickEl    = document.getElementById('stage-3d-touch-stick');
+const stage3dStickRingEl= stage3dStickEl?.querySelector('.stick-ring') ?? null;
+const stage3dStickNubEl = stage3dStickEl?.querySelector('.stick-nub') ?? null;
+const stage3dLookEl     = document.getElementById('stage-3d-touch-look');
 
 const volSlider     = document.getElementById('vol-slider');
 const tempoSlider   = document.getElementById('tempo-slider');
@@ -1117,7 +1122,10 @@ async function ensureStage3D() {
   stage3dLoading = true;
   try {
     const mod = await import('./stage3d.js');
-    stage3d = new mod.Stage3D(canvas3dEl, stage3dPromptEl, stage3dHintEl);
+    stage3d = new mod.Stage3D(
+      canvas3dEl, stage3dPromptEl, stage3dHintEl,
+      stage3dTouchHudEl, stage3dStickEl, stage3dStickRingEl, stage3dStickNubEl, stage3dLookEl,
+    );
     stage3d.onUpdate = onCameraTick3D;
     stage3d.onInteract = onInteractVoice3D;
     stage3d.onDrop = onCarryDrop3D;

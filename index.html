@@ -116,6 +116,61 @@
     .movement-btn:disabled .label-sub::after {
       content: " — coming soon";
     }
+    #movement-select .tagline {
+      margin: 0;
+      max-width: 560px;
+      color: var(--fg);
+      font-size: clamp(15px, 1.8vw, 18px);
+      font-weight: 300;
+      line-height: 1.5;
+      text-align: center;
+    }
+    #movement-select .tagline em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    #movement-select .features {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 560px;
+      text-align: center;
+    }
+    #movement-select .features li {
+      color: var(--dim);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    #movement-select .features li strong {
+      color: var(--fg);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    #movement-select .features-compact {
+      display: none;
+      margin: 0;
+      color: var(--dim);
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+      max-width: 92vw;
+    }
+    #movement-select .splash-footer {
+      margin: 0;
+      color: var(--dim);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+    }
+    @media (max-width: 600px) {
+      #movement-select { gap: 20px; }
+      #movement-select .features { display: none; }
+      #movement-select .features-compact { display: block; }
+    }
 
     /* Stage view (placeholder for phase 1) */
     #stage-view {
@@ -536,6 +591,13 @@
   <div id="movement-select">
     <h1>Electric Counterpoint</h1>
     <div class="composer">Steve Reich, 1987</div>
+    <p class="tagline">Stand inside Steve Reich's <em>Electric Counterpoint</em> — explore an interactive realization in 2D or 3D.</p>
+    <ul class="features">
+      <li><strong>2D stage</strong> — drag the listener and the guitarists; pan, distance, and reverb follow you</li>
+      <li><strong>3D walkthrough</strong> — step into the half-moon and walk through the room in first-person</li>
+      <li><strong>Live mix</strong> — per-voice volume, mute, spotlight, swap guitars to acoustic / marimba / vibraphone</li>
+    </ul>
+    <p class="features-compact">Drag voices, walk the stage, and mix the room — all live, in 2D or 3D.</p>
     <p class="subtitle">choose a movement</p>
     <div id="movement-buttons">
       <button class="movement-btn" data-movement="I" disabled>
@@ -551,6 +613,7 @@
         <span class="label-sub">live guitar · 7 guitars · 2 bass · click</span>
       </button>
     </div>
+    <p class="splash-footer">headphones recommended</p>
   </div>
 
   <div id="stage-view">
